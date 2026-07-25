@@ -1,0 +1,6 @@
+{
+  "name": "ISO Digital Library Management System",
+  "description": "Digital Library Management System for International Sadat Organization (ISO) with Member & Office Bearer Records, Hierarchy, RBAC Admin Controls, Advanced Search, Data Export/Import, Card Generator, and System Security.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
