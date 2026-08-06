@@ -684,6 +684,22 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                     <p className="text-xs text-slate-400 font-mono mt-1">Mobile ID: {currentLoggedInUser.mobileNumber}</p>
                   </div>
 
+                  <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-left text-xs text-slate-300 space-y-1">
+                    <p className="font-bold text-amber-400 flex items-center justify-between">
+                      <span>Saved Super Admin Direct Login Link:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyLink('superAdmin')}
+                        className="text-amber-400 hover:underline flex items-center gap-1 font-mono text-[11px]"
+                      >
+                        <Copy className="w-3 h-3" /> {copySuccess === 'superAdmin' ? 'Copied Link!' : 'Copy Saved Link'}
+                      </button>
+                    </p>
+                    <p className="font-mono text-[11px] text-emerald-400 truncate">
+                      {window.location.origin}{window.location.pathname}?portal=superAdmin
+                    </p>
+                  </div>
+
                   <div className="pt-2 flex justify-center gap-3">
                     <button
                       onClick={onLogout}
@@ -700,7 +716,7 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleAdminLogin} className="mt-5 space-y-4 max-w-md mx-auto">
+                <div className="mt-5 space-y-4 max-w-md mx-auto">
                   {currentLoggedInUser && (
                     <div className="p-3.5 bg-red-950/70 border border-red-500/50 text-red-200 text-xs rounded-xl flex items-start gap-2.5 shadow-lg">
                       <ShieldAlert className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
@@ -722,57 +738,59 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                     </div>
                   )}
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">
-                      Mobile Number (User ID) <span className="text-red-400">*</span>
-                    </label>
-                    <div className="relative">
-                      <Phone className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-500" />
-                      <input
-                        type="text"
-                        required
-                        placeholder="Enter Registered Mobile Number ID"
-                        value={loginMobile}
-                        onChange={(e) => setLoginMobile(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
-                      />
+                  <form onSubmit={handleAdminLogin} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                        Mobile Number (User ID) <span className="text-red-400">*</span>
+                      </label>
+                      <div className="relative">
+                        <Phone className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-500" />
+                        <input
+                          type="text"
+                          required
+                          placeholder="Enter Registered Mobile Number ID"
+                          value={loginMobile}
+                          onChange={(e) => setLoginMobile(e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                        />
+                      </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">
-                      Login Password <span className="text-red-400">*</span>
-                    </label>
-                    <div className="relative">
-                      <Lock className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-500" />
-                      <input
-                        type="password"
-                        required
-                        placeholder="Enter Password"
-                        value={loginPassword}
-                        onChange={(e) => setLoginPassword(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
-                      />
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                        Login Password <span className="text-red-400">*</span>
+                      </label>
+                      <div className="relative">
+                        <Lock className="w-4 h-4 absolute left-3.5 top-2.5 text-slate-500" />
+                        <input
+                          type="password"
+                          required
+                          placeholder="Enter Password"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                        />
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="pt-3 flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      className="px-4 py-2 bg-slate-800 text-slate-300 text-xs font-bold rounded-xl hover:bg-slate-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-amber-600/30 flex items-center gap-2 transition-all"
-                    >
-                      <KeyRound className="w-4 h-4" />
-                      <span>Authenticate & Log In</span>
-                    </button>
-                  </div>
-                </form>
+                    <div className="pt-3 flex items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-4 py-2 bg-slate-800 text-slate-300 text-xs font-bold rounded-xl hover:bg-slate-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-amber-600/30 flex items-center gap-2 transition-all"
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Authenticate & Access Control Panel</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
               )}
             </div>
           )}

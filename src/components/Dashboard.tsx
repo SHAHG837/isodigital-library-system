@@ -16,7 +16,9 @@ import {
   Sparkles,
   Network,
   LogOut,
-  CheckCircle2
+  CheckCircle2,
+  ExternalLink,
+  FileText
 } from 'lucide-react';
 import { Member, OfficeBearer, ActiveTab, AuditLog, AdminCredential } from '../types';
 import { SUPER_ADMIN_INFO, ISO_LOGO_URL } from '../data/initialData';
@@ -153,6 +155,39 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* Compulsory Google Registration Form Banner for All Joined Members */}
+      <div className="bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 border-2 border-amber-500/80 p-5 rounded-2xl shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="p-2.5 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-xl shrink-0 mt-0.5 shadow-md">
+            <FileText className="w-5 h-5" />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/40">
+                Compulsory Requirement
+              </span>
+              <span className="text-xs text-amber-200/90 font-bold">Official Registration Form</span>
+            </div>
+            <h3 className="text-sm font-extrabold text-amber-100">
+              Mandatory Member Form: All newly joined members must fill this official Google Form
+            </h3>
+            <p className="text-xs text-amber-200/80 font-mono text-[11px] break-all">
+              Direct Link: <a href="https://forms.gle/7NiEiCtEr5BFsmkY8" target="_blank" rel="noopener noreferrer" className="underline font-bold text-amber-300 hover:text-white">https://forms.gle/7NiEiCtEr5BFsmkY8</a>
+            </p>
+          </div>
+        </div>
+
+        <a
+          href="https://forms.gle/7NiEiCtEr5BFsmkY8"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2 transition-all shrink-0 uppercase tracking-wider"
+        >
+          <span>Fill Google Form Now</span>
+          <ExternalLink className="w-4 h-4" />
+        </a>
+      </div>
 
       {/* Sleek Interface Top Welcome Banner */}
       <div className="relative overflow-hidden rounded-2xl bg-slate-900/50 border border-slate-800 p-6 text-white shadow-xl">

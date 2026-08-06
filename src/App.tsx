@@ -39,6 +39,7 @@ import { AuditLogsModule } from './components/AuditLogsModule';
 import { Footer } from './components/Footer';
 import { PortalModal } from './components/PortalModal';
 import { AuthLoginGate } from './components/AuthLoginGate';
+import { FileText, ExternalLink } from 'lucide-react';
 
 export function App() {
   // Navigation State
@@ -208,6 +209,7 @@ export function App() {
   // Modal triggers
   const [showAddMemberDirectly, setShowAddMemberDirectly] = useState(false);
   const [showAddOBDirectly, setShowAddOBDirectly] = useState(false);
+  const [showCompulsoryFormModal, setShowCompulsoryFormModal] = useState(false);
 
   // Sync state to localStorage
   useEffect(() => {
@@ -242,11 +244,14 @@ export function App() {
     }
   }, [currentLoggedInUser]);
 
-  // Handle URL Portal Params (e.g. ?portal=member or ?portal=official)
+  // Handle URL Portal Params (e.g. ?portal=superAdmin, ?portal=adminLogin, ?portal=member or ?portal=official)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const portalParam = params.get('portal');
-    if (portalParam === 'member' || portalParam === 'official' || portalParam === 'adminLogin') {
+    if (portalParam === 'superAdmin' || portalParam === 'adminLogin') {
+      setPortalDefaultTab('adminLogin');
+      setIsPortalOpen(true);
+    } else if (portalParam === 'member' || portalParam === 'official') {
       setPortalDefaultTab(portalParam as any);
       setIsPortalOpen(true);
     }
@@ -529,6 +534,14 @@ export function App() {
     };
 
     setRegistrationNotifications((prev) => [notif, ...prev]);
+    setShowCompulsoryFormModal(true);
+
+    try {
+      window.open('https://forms.gle/7NiEiCtEr5BFsmkY8', '_blank');
+    } catch (err) {
+      console.error(err);
+    }
+
     logActivity('Member Self-Registration & Portal Login', `${newMember.fullName} registered/logged in from ${newMember.city} (Mobile: ${newMember.mobileNumber})`);
   };
 
@@ -682,7 +695,7 @@ export function App() {
           )}
 
           {effectiveActiveTab === 'hierarchy' && (
-            <HierarchyModule members={members} officeBearers={officeBearers} />
+            <HierarchyModule members={members} officeBearers={officeBearers} isSuperAdmin={isSuperAdmin} />
           )}
 
           {effectiveActiveTab === 'superAdmin' && (
@@ -785,6 +798,67 @@ export function App() {
         currentLoggedInUser={currentLoggedInUser}
         onLogout={() => setCurrentLoggedInUser(null)}
       />
+
+      {/* Compulsory Registration Form Modal for Joined Members */}
+      {showCompulsoryFormModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 border-2 border-amber-500/80 rounded-3xl max-w-lg w-full p-6 text-white shadow-2xl space-y-5 relative">
+            <button
+              onClick={() => setShowCompulsoryFormModal(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
+            >
+              ✕
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-2xl shrink-0">
+                <FileText className="w-7 h-7" />
+              </div>
+              <div>
+                <span className="px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/40">
+                  Compulsory Action Required
+                </span>
+                <h2 className="text-lg font-bold text-white mt-1">
+                  Official Google Registration Form
+                </h2>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2 text-xs text-slate-300">
+              <p className="font-semibold text-amber-200">
+                Welcome to ISO Central Repository!
+              </p>
+              <p>
+                As a newly joined member, you must complete the official membership registration form on Google Forms to finalize your profile and record.
+              </p>
+              <div className="p-2.5 bg-slate-900 border border-slate-700 rounded-xl font-mono text-[11px] text-amber-400 break-all select-all">
+                https://forms.gle/7NiEiCtEr5BFsmkY8
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <a
+                href="https://forms.gle/7NiEiCtEr5BFsmkY8"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setShowCompulsoryFormModal(false)}
+                className="w-full sm:flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition-all uppercase tracking-wider text-center"
+              >
+                <span>Open Google Form Now</span>
+                <ExternalLink className="w-4 h-4" />
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setShowCompulsoryFormModal(false)}
+                className="w-full sm:w-auto px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all"
+              >
+                I Have Completed It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

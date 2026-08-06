@@ -75,8 +75,30 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ memb
     setIsGenerating(false);
   };
 
+  const isApproved =
+    selectedType === 'OfficeBearer' ||
+    (activePerson && 'status' in activePerson
+      ? activePerson.status === 'Approved' || activePerson.status === 'Active'
+      : true);
+
   return (
     <div className="space-y-6">
+      {!isApproved && (
+        <div className="bg-amber-950/90 border-2 border-amber-500/80 text-amber-100 p-4 rounded-2xl flex items-start gap-3 shadow-xl">
+          <ShieldAlert className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h4 className="font-extrabold text-sm text-amber-300 uppercase tracking-wide flex items-center gap-2">
+              <span>Card Download Restricted — Status: {activePerson && 'status' in activePerson ? activePerson.status : 'Pending Approval'}</span>
+            </h4>
+            <p className="text-xs text-amber-200">
+              {activePerson && 'status' in activePerson && activePerson.status === 'Rejected'
+                ? 'Your member registration was REJECTED by Super Admin. Card generation is disabled.'
+                : 'Your member registration is currently PENDING Super Admin approval. Members can download & print their card once Syed Muhammad Aamir Naqvi Al Bukhari (Super Admin) approves their registration status in the Member Directory.'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Top Banner Header */}
       <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -97,22 +119,25 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ memb
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleDownloadPDF}
-              disabled={isGenerating}
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 transition-all disabled:opacity-50"
+              disabled={isGenerating || !isApproved}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              title={!isApproved ? 'Approval required by Super Admin before downloading' : 'Download PDF'}
             >
               <FileText className="w-4 h-4" /> Download PDF
             </button>
             <button
               onClick={handleDownloadPNG}
-              disabled={isGenerating}
-              className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              disabled={isGenerating || !isApproved}
+              className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={!isApproved ? 'Approval required by Super Admin before downloading' : 'Save PNG'}
             >
               <ImageIcon className="w-4 h-4 text-emerald-400" /> Save PNG
             </button>
             <button
               onClick={handlePrintCard}
-              disabled={isGenerating}
-              className="px-3.5 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              disabled={isGenerating || !isApproved}
+              className="px-3.5 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={!isApproved ? 'Approval required by Super Admin before printing' : 'Print Card'}
             >
               <Printer className="w-4 h-4" /> Print Card
             </button>

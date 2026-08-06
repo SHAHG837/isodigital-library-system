@@ -13,7 +13,7 @@ export interface Member {
   joiningDate: string;
   profilePhoto: string;
   notes?: string;
-  status: 'Active' | 'Inactive' | 'Pending';
+  status: 'Approved' | 'Pending' | 'Rejected' | 'Active' | 'Inactive';
 }
 
 export interface OfficeBearer {
@@ -185,6 +185,7 @@ export interface AdminCredential {
   role: 'SuperAdmin' | 'Admin' | 'Manager' | 'Viewer';
   isSuperAdmin: boolean;
   createdDate: string;
+  profilePhoto?: string;
 }
 
 export interface RegistrationNotification {

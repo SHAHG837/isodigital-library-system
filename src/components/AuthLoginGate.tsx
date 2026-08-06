@@ -14,7 +14,10 @@ import {
   Sparkles,
   ArrowRight,
   Shield,
-  FileText
+  FileText,
+  Copy,
+  ExternalLink,
+  Check
 } from 'lucide-react';
 import { AdminCredential, Member, OfficeBearer } from '../types';
 
@@ -31,44 +34,39 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
   onRegisterMember,
   onRegisterOfficeBearer
 }) => {
-  const [activeTab, setActiveTab] = useState<'adminLogin' | 'memberRegister' | 'officialRegister'>('adminLogin');
+  const [activeTab, setActiveTab] = useState<'memberRegister' | 'officialRegister'>('memberRegister');
 
   // Admin Login Inputs
   const [mobileInput, setMobileInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  const handleCopySuperAdminLink = () => {
+    const url = `${window.location.origin}${window.location.pathname}?portal=superAdmin`;
+    navigator.clipboard.writeText(url);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2500);
+  };
+
+  // Member Mode State (Sign Up vs Sign In)
+  const [memberAuthMode, setMemberAuthMode] = useState<'signup' | 'signin'>('signup');
+
+  // Member Sign In Inputs
+  const [memSignInName, setMemSignInName] = useState('');
+  const [memSignInMobile, setMemSignInMobile] = useState('');
 
   // Member Registration Inputs
   const [memName, setMemName] = useState('');
   const [memMobile, setMemMobile] = useState('');
   const [memCity, setMemCity] = useState('');
   const [memDistrict, setMemDistrict] = useState('');
-  const [memRegSuccess, setMemRegSuccess] = useState<string | null>(null);
 
   // Office Bearer Registration Inputs
   const [obName, setObName] = useState('');
   const [obMobile, setObMobile] = useState('');
   const [obDesignation, setObDesignation] = useState('Central Executive Member');
   const [obCity, setObCity] = useState('');
-  const [obRegSuccess, setObRegSuccess] = useState<string | null>(null);
-
-  // One-Click Super Admin Login
-  const handleQuickSuperAdminLogin = () => {
-    const superAdminCred = adminCredentials.find((c) => c.mobileNumber === '03323475431') || {
-      mobileNumber: '03323475431',
-      password: 'admin123',
-      name: 'Syed Muhammad Aamir Naqvi Al Bukhari',
-      designation: 'Chairman IT Support Council',
-      role: 'SuperAdmin',
-      isSuperAdmin: true,
-      createdDate: '2026-01-01'
-    };
-
-    onLoginSuccess(
-      superAdminCred,
-      `Welcome back, ${superAdminCred.name}! Super Administrator Access Granted to Central Repository.`
-    );
-  };
 
   // Submit Admin Login
   const handleAdminLoginSubmit = (e: React.FormEvent) => {
@@ -83,9 +81,10 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
     );
 
     if (found) {
+      const firstName = found.name.split(' ')[0] || found.name;
       onLoginSuccess(
         found,
-        `Welcome back, ${found.name}! Authenticated as ${found.designation} (${found.role}).`
+        `Welcome back, ${firstName}! Authenticated as ${found.designation} (${found.role}).`
       );
     } else if (cleanMobile === '03323475431' && cleanPass === 'admin123') {
       const defaultSuperAdmin: AdminCredential = {
@@ -99,7 +98,7 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
       };
       onLoginSuccess(
         defaultSuperAdmin,
-        `Welcome back, ${defaultSuperAdmin.name}! Chairman IT Support Council Access Granted.`
+        `Welcome back, Syed Muhammad Aamir Naqvi! Super Administrator Access Granted.`
       );
     } else {
       setLoginError(
@@ -108,7 +107,7 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
     }
   };
 
-  // Submit Member Registration
+  // Submit Member Registration (Sign Up)
   const handleMemberSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!memName.trim() || !memMobile.trim() || !memCity.trim()) {
@@ -133,6 +132,8 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
 
     onRegisterMember(newMem);
 
+    const firstName = memName.trim().split(' ')[0] || memName.trim();
+
     // Auto log in member
     const memberCredential: AdminCredential = {
       mobileNumber: memMobile.trim(),
@@ -144,9 +145,42 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
       createdDate: new Date().toISOString().split('T')[0]
     };
 
+    // Open compulsory Google Registration Form in new tab
+    try {
+      window.open('https://forms.gle/7NiEiCtEr5BFsmkY8', '_blank');
+    } catch (err) {
+      console.error(err);
+    }
+
     onLoginSuccess(
       memberCredential,
-      `Welcome to ISO Central Repository, ${memName.trim()}! Member Registration Verified.`
+      `Welcome to ISO Central Repository, ${firstName}! Please complete your compulsory registration form at https://forms.gle/7NiEiCtEr5BFsmkY8.`
+    );
+  };
+
+  // Submit Member Sign In
+  const handleMemberSignInSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!memSignInName.trim() || !memSignInMobile.trim()) {
+      alert('Please enter your Name and Mobile Number.');
+      return;
+    }
+
+    const firstName = memSignInName.trim().split(' ')[0] || memSignInName.trim();
+
+    const memberCredential: AdminCredential = {
+      mobileNumber: memSignInMobile.trim(),
+      password: 'memberPass123',
+      name: memSignInName.trim(),
+      designation: 'ISO General Member',
+      role: 'Viewer',
+      isSuperAdmin: false,
+      createdDate: new Date().toISOString().split('T')[0]
+    };
+
+    onLoginSuccess(
+      memberCredential,
+      `Welcome back, ${firstName}! Member Sign In Successful.`
     );
   };
 
@@ -175,6 +209,8 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
 
     onRegisterOfficeBearer(newOb);
 
+    const firstName = obName.trim().split(' ')[0] || obName.trim();
+
     const officialCredential: AdminCredential = {
       mobileNumber: obMobile.trim(),
       password: 'officialPass123',
@@ -187,7 +223,7 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
 
     onLoginSuccess(
       officialCredential,
-      `Welcome back, ${obName.trim()} (${obDesignation})! Cabinet Access Granted.`
+      `Welcome back, ${firstName} (${obDesignation})! Cabinet Access Granted.`
     );
   };
 
@@ -220,16 +256,7 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
         {/* Tab Navigation */}
         <div className="flex border-b border-slate-800 bg-slate-950/40 p-2 gap-2">
           <button
-            onClick={() => setActiveTab('adminLogin')}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-              activeTab === 'adminLogin'
-                ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4" /> Administrator Login
-          </button>
-          <button
+            type="button"
             onClick={() => setActiveTab('memberRegister')}
             className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'memberRegister'
@@ -237,9 +264,10 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
-            <User className="w-4 h-4" /> Member Login
+            <User className="w-4 h-4" /> Member Portal (Sign Up / Sign In)
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('officialRegister')}
             className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'officialRegister'
@@ -247,139 +275,175 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
-            <Building2 className="w-4 h-4" /> Official Login
+            <Building2 className="w-4 h-4" /> Official Cabinet Login
           </button>
         </div>
 
         {/* Form Body */}
         <div className="p-6 relative z-10">
 
-          {/* 1. SUPER ADMIN / OFFICIAL LOGIN TAB */}
-          {activeTab === 'adminLogin' && (
-            <div className="space-y-5">
-              {loginError && (
-                <div className="p-3 bg-red-950/60 border border-red-800 text-red-200 text-xs rounded-xl flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <span>{loginError}</span>
-                </div>
-              )}
+          {/* 2. MEMBER SIGNUP / SIGN IN TAB */}
+          {activeTab === 'memberRegister' && (
+            <div className="space-y-4">
+              {/* Member Auth Mode Switcher */}
+              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setMemberAuthMode('signup')}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
+                    memberAuthMode === 'signup'
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  New Member Sign Up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMemberAuthMode('signin')}
+                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
+                    memberAuthMode === 'signin'
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Member Sign In
+                </button>
+              </div>
 
-              <form onSubmit={handleAdminLoginSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    Mobile Number ID <span className="text-red-400">*</span>
-                  </label>
-                  <div className="relative">
-                    <Phone className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+              {memberAuthMode === 'signup' ? (
+                <form onSubmit={handleMemberSubmit} className="space-y-4">
+                  <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-300">
+                    <strong>New Member Registration:</strong> Register your account to receive your official membership card and access digital records.
+                  </div>
+
+                  {/* Compulsory Registration Google Form Card */}
+                  <div className="p-3.5 bg-amber-950/60 border border-amber-500/50 rounded-xl text-xs text-amber-200 space-y-1.5 shadow-md">
+                    <div className="flex items-center gap-2 font-bold text-amber-300">
+                      <ExternalLink className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Compulsory Google Registration Form</span>
+                    </div>
+                    <p className="text-[11px] text-amber-200/90">
+                      Upon joining, new members are required to fill out the compulsory Google Form:
+                    </p>
+                    <a
+                      href="https://forms.gle/7NiEiCtEr5BFsmkY8"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-mono text-[11px] text-amber-300 hover:text-white underline font-bold"
+                    >
+                      <span>https://forms.gle/7NiEiCtEr5BFsmkY8</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Full Name <span className="text-red-400">*</span>
+                    </label>
                     <input
                       type="text"
                       required
-                      placeholder="Enter Mobile Number"
-                      value={mobileInput}
-                      onChange={(e) => setMobileInput(e.target.value)}
-                      className="w-full bg-slate-800/90 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                      placeholder="e.g. Syed Ali Raza Naqvi"
+                      value={memName}
+                      onChange={(e) => setMemName(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    Password <span className="text-red-400">*</span>
-                  </label>
-                  <div className="relative">
-                    <KeyRound className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                        Mobile Number <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="e.g. 03001234567"
+                        value={memMobile}
+                        onChange={(e) => setMemMobile(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                        City Name <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Karachi, Lahore"
+                        value={memCity}
+                        onChange={(e) => setMemCity(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">District / Region</label>
                     <input
-                      type="password"
-                      required
-                      placeholder="Enter Password"
-                      value={passwordInput}
-                      onChange={(e) => setPasswordInput(e.target.value)}
-                      className="w-full bg-slate-800/90 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                      type="text"
+                      placeholder="e.g. Central Karachi"
+                      value={memDistrict}
+                      onChange={(e) => setMemDistrict(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
-                </div>
 
-                <button
-                  type="submit"
-                  className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2 transition-all"
-                >
-                  <Lock className="w-4 h-4" />
-                  <span>Authenticate & Unlock Central Repository</span>
-                </button>
-              </form>
+                  <button
+                    type="submit"
+                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all"
+                  >
+                    <UserCheck className="w-4 h-4" />
+                    <span>Sign Up & Enter Main Landing Page</span>
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleMemberSignInSubmit} className="space-y-4">
+                  <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-300">
+                    <strong>Member Sign In:</strong> Enter your registered name and mobile number to log back into your member account.
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Member Full Name <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Enter Registered Full Name"
+                      value={memSignInName}
+                      onChange={(e) => setMemSignInName(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Registered Mobile Number <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="Enter Registered Mobile Number"
+                      value={memSignInMobile}
+                      onChange={(e) => setMemSignInMobile(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all"
+                  >
+                    <UserCheck className="w-4 h-4" />
+                    <span>Sign In & Enter Main Landing Page</span>
+                  </button>
+                </form>
+              )}
             </div>
-          )}
-
-          {/* 2. MEMBER REGISTRATION / LOGIN TAB */}
-          {activeTab === 'memberRegister' && (
-            <form onSubmit={handleMemberSubmit} className="space-y-4">
-              <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-300">
-                <strong>Every member must be registered:</strong> Fill in your details below to instantly register and access digital library records.
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Full Name <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Syed Ali Raza Naqvi"
-                  value={memName}
-                  onChange={(e) => setMemName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    Mobile Number <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="e.g. 03001234567"
-                    value={memMobile}
-                    onChange={(e) => setMemMobile(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    City Name <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Karachi, Lahore"
-                    value={memCity}
-                    onChange={(e) => setMemCity(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">District / Region</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Central Karachi"
-                  value={memDistrict}
-                  onChange={(e) => setMemDistrict(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all"
-              >
-                <UserCheck className="w-4 h-4" />
-                <span>Register Member & Access Digital Repository</span>
-              </button>
-            </form>
           )}
 
           {/* 3. OFFICIAL REGISTRATION / LOGIN TAB */}

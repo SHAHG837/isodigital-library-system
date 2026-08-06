@@ -204,7 +204,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/80 flex items-center justify-between space-x-2">
               <div className="flex items-center space-x-2.5 min-w-0">
                 <img
-                  src="C:\Users\Hp\Downloads"
+                  src={currentLoggedInUser?.profilePhoto || superAdminInfo?.profilePhoto || SUPER_ADMIN_INFO.profilePhoto}
                   alt={currentLoggedInUser?.name || SUPER_ADMIN_INFO.name}
                   className="w-8 h-8 rounded-full object-cover border-2 border-indigo-500/80 shadow-md shrink-0"
                 />

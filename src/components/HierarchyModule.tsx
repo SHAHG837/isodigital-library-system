@@ -66,7 +66,7 @@ const INITIAL_HIERARCHY_NODES: HierarchyNode[] = [
 export const HierarchyModule: React.FC<HierarchyModuleProps> = ({
   members,
   officeBearers,
-  isSuperAdmin = true
+  isSuperAdmin = false
 }) => {
   // State for Hierarchy Nodes
   const [nodes, setNodes] = useState<HierarchyNode[]>(() => {
@@ -135,6 +135,7 @@ export const HierarchyModule: React.FC<HierarchyModuleProps> = ({
 
   // Open Add Modal
   const handleOpenAdd = (parent?: HierarchyNode) => {
+    if (!isSuperAdmin) return;
     setEditingNode(null);
     setFormData({
       name: '',
@@ -159,6 +160,7 @@ export const HierarchyModule: React.FC<HierarchyModuleProps> = ({
 
   // Open Edit Modal
   const handleOpenEdit = (node: HierarchyNode) => {
+    if (!isSuperAdmin) return;
     setEditingNode(node);
     setFormData({ ...node });
     setShowNodeModal(true);
@@ -339,9 +341,13 @@ export const HierarchyModule: React.FC<HierarchyModuleProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold text-slate-900 dark:text-white">Organization Hierarchy</h1>
-                {isSuperAdmin && (
+                {isSuperAdmin ? (
                   <span className="px-2.5 py-0.5 text-[10px] font-extrabold bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 rounded-full border border-red-300 dark:border-red-800">
                     SUPER ADMIN EDIT CONTROL ACTIVE
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 text-[10px] font-extrabold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded-full border border-blue-300 dark:border-blue-800">
+                    RESTRICTED READ ONLY MEMBER VIEW
                   </span>
                 )}
               </div>
@@ -382,7 +388,9 @@ export const HierarchyModule: React.FC<HierarchyModuleProps> = ({
                 Complete Organization Hierarchy Structure
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Interactive nested tree with direct Add, Edit, and Delete controls for Super Administrator.
+                {isSuperAdmin
+                  ? 'Interactive nested tree with direct Add, Edit, and Delete controls for Super Administrator.'
+                  : 'Complete Organization Structure (Read-Only Mode for Members).'}
               </p>
             </div>
 

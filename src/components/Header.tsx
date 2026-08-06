@@ -302,7 +302,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="flex items-center space-x-2.5 p-1.5 bg-slate-800/60 hover:bg-slate-800 border border-slate-700/80 rounded-xl transition-all"
           >
             <img
-              src={superAdminInfo?.profilePhoto || SUPER_ADMIN_INFO.profilePhoto}
+              src={currentLoggedInUser?.profilePhoto || superAdminInfo?.profilePhoto || SUPER_ADMIN_INFO.profilePhoto}
               alt={displayUserName}
               className="w-7 h-7 rounded-full object-cover border border-indigo-400"
             />
@@ -321,7 +321,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="text-center pb-4 border-b border-slate-800 relative">
                 <div className="relative inline-block group">
                   <img
-                    src={superAdminInfo?.profilePhoto || SUPER_ADMIN_INFO.profilePhoto}
+                    src={currentLoggedInUser?.profilePhoto || superAdminInfo?.profilePhoto || SUPER_ADMIN_INFO.profilePhoto}
                     alt={displayUserName}
                     className="w-16 h-16 rounded-full object-cover mx-auto ring-2 ring-indigo-500/50 shadow-md mb-2"
                   />
