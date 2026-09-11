@@ -23,12 +23,14 @@ interface ExportImportModuleProps {
   members: Member[];
   officeBearers: OfficeBearer[];
   onImportMembers: (importedMembers: Member[]) => void;
+  onOpenGoogleSheets?: () => void;
 }
 
 export const ExportImportModule: React.FC<ExportImportModuleProps> = ({
   members,
   officeBearers,
-  onImportMembers
+  onImportMembers,
+  onOpenGoogleSheets
 }) => {
   const [targetDataset, setTargetDataset] = useState<'Members' | 'OfficeBearers'>('Members');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export const ExportImportModule: React.FC<ExportImportModuleProps> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 rounded-2xl">
             <FileDown className="w-6 h-6" />
@@ -67,10 +69,21 @@ export const ExportImportModule: React.FC<ExportImportModuleProps> = ({
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">Central Export & Data Import Hub</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Export complete ISO organizational archives to Word, PDF, Excel, PowerPoint, CSV, and JSON.
+              Export complete ISO organizational archives to Word, PDF, Excel, PowerPoint, CSV, JSON, and Google Sheets.
             </p>
           </div>
         </div>
+
+        {onOpenGoogleSheets && (
+          <button
+            type="button"
+            onClick={onOpenGoogleSheets}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 transition-all shrink-0"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Open Google Sheets & Drive Sync</span>
+          </button>
+        )}
       </div>
 
       {/* Target Dataset Selection */}

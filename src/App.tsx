@@ -34,6 +34,7 @@ import { GlobalSearchModule } from './components/GlobalSearchModule';
 import { ShajraModule } from './components/ShajraModule';
 import { MembershipCardModule } from './components/MembershipCardModule';
 import { ExportImportModule } from './components/ExportImportModule';
+import { GoogleSheetsModule } from './components/GoogleSheetsModule';
 import { AiAssistantModule } from './components/AiAssistantModule';
 import { AuditLogsModule } from './components/AuditLogsModule';
 import { Footer } from './components/Footer';
@@ -765,6 +766,17 @@ export function App() {
               members={members}
               officeBearers={officeBearers}
               onImportMembers={handleImportMembers}
+              onOpenGoogleSheets={() => setActiveTab('googleSheets')}
+            />
+          )}
+
+          {effectiveActiveTab === 'googleSheets' && (
+            <GoogleSheetsModule
+              members={members}
+              setMembers={setMembers}
+              officeBearers={officeBearers}
+              onLogActivity={logActivity}
+              isSuperAdmin={isSuperAdmin}
             />
           )}
 

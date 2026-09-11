@@ -166,6 +166,7 @@ export type ActiveTab =
   | 'adminRbac'
   | 'globalSearch'
   | 'exportImport'
+  | 'googleSheets'
   | 'shajra'
   | 'documents'
   | 'membershipCard'

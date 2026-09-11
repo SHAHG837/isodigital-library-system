@@ -73,6 +73,7 @@ export const PortalModal: React.FC<PortalModalProps> = ({
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
+  const [showCabinetOptionBelowAdmin, setShowCabinetOptionBelowAdmin] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
@@ -213,21 +214,6 @@ export const PortalModal: React.FC<PortalModalProps> = ({
             </button>
 
             <button
-              onClick={() => {
-                setActivePortalTab('official');
-                setObSubmitted(null);
-              }}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
-                activePortalTab === 'official'
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-white'
-              }`}
-            >
-              <Building2 className="w-4 h-4" />
-              <span>Office Bearer Portal</span>
-            </button>
-
-            <button
               onClick={() => setActivePortalTab('adminLogin')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
                 activePortalTab === 'adminLogin'
@@ -236,7 +222,7 @@ export const PortalModal: React.FC<PortalModalProps> = ({
               }`}
             >
               <ShieldCheck className="w-4 h-4" />
-              <span>Super Admin Login</span>
+              <span>Admin Panel Login</span>
             </button>
           </div>
 
@@ -790,6 +776,99 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                       </button>
                     </div>
                   </form>
+
+                  {/* Official Cabinet Option - Hidden by default, opens only below admin panel when clicked */}
+                  <div className="pt-4 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setShowCabinetOptionBelowAdmin(!showCabinetOptionBelowAdmin)}
+                      className="w-full py-2.5 px-3.5 bg-slate-950/80 hover:bg-slate-800 border border-slate-700/60 hover:border-emerald-500/40 rounded-xl text-xs font-semibold text-slate-400 hover:text-emerald-300 flex items-center justify-between transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-emerald-400" />
+                        <span>Official Cabinet Login & Registration</span>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full">
+                        {showCabinetOptionBelowAdmin ? 'Hide Option ▲' : 'Click to Open Option ▼'}
+                      </span>
+                    </button>
+
+                    {showCabinetOptionBelowAdmin && (
+                      <div className="mt-4 p-4 bg-slate-950/90 border border-emerald-500/40 rounded-2xl space-y-4">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                          <span className="text-xs font-bold text-emerald-400">
+                            Cabinet Official Registration & Authentication
+                          </span>
+                        </div>
+                        <form onSubmit={handleOfficialSubmit} className="space-y-3">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                              Official Full Name <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. Syed Hassan Abbas Naqvi"
+                              value={obName}
+                              onChange={(e) => setObName(e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                Designation <span className="text-red-400">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="e.g. Central IT Secretary"
+                                value={obDesignation}
+                                onChange={(e) => setObDesignation(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                Mobile Number <span className="text-red-400">*</span>
+                              </label>
+                              <input
+                                type="tel"
+                                required
+                                placeholder="e.g. 03009876543"
+                                value={obMobile}
+                                onChange={(e) => setObMobile(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                              City Name <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. Lahore"
+                              value={obCity}
+                              onChange={(e) => setObCity(e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                          >
+                            <Building2 className="w-4 h-4" />
+                            <span>Authenticate Cabinet Official</span>
+                          </button>
+                        </form>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

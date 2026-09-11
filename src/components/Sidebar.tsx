@@ -76,7 +76,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           { id: 'superAdmin' as ActiveTab, label: 'Super Administrator', icon: ShieldCheck, highlight: true },
           { id: 'adminRbac' as ActiveTab, label: 'Admin Security', icon: UserCheck },
           { id: 'globalSearch' as ActiveTab, label: 'Global Search', icon: Search },
-          { id: 'exportImport' as ActiveTab, label: 'Import / Export', icon: FileSpreadsheet }
+          { id: 'exportImport' as ActiveTab, label: 'Import / Export', icon: FileSpreadsheet },
+          { id: 'googleSheets' as ActiveTab, label: 'Google Sheets & Drive', icon: FileSpreadsheet, badge: 'Live API' }
         ]
       }
     ] : []),
