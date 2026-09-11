@@ -42,6 +42,12 @@ import { Footer } from './components/Footer';
 import { PortalModal } from './components/PortalModal';
 import { AuthLoginGate } from './components/AuthLoginGate';
 import { FileText, ExternalLink } from 'lucide-react';
+import {
+  supabaseSignOut,
+  getSupabaseSession,
+  onSupabaseAuthStateChange,
+  fetchProfile
+} from './lib/supabase';
 
 export function App() {
   // Navigation State
@@ -192,6 +198,48 @@ export function App() {
   // Welcome Note State
   const [welcomeNote, setWelcomeNote] = useState<string | null>(null);
 
+  // Auto-restore active Supabase Auth session if present
+  useEffect(() => {
+    async function restoreSupabaseSession() {
+      const session = await getSupabaseSession();
+      if (session?.user && !currentLoggedInUser) {
+        const profile = await fetchProfile(session.user.id);
+        const isSuper =
+          profile?.role === 'super_admin' ||
+          session.user.email?.toLowerCase() === 'syedmuhammadamir837@gmail.com';
+        const userCred: AdminCredential = {
+          mobileNumber: profile?.phone || session.user.phone || session.user.email || '03323475431',
+          password: '***',
+          name:
+            profile?.full_name ||
+            session.user.user_metadata?.full_name ||
+            session.user.email?.split('@')[0] ||
+            'Authenticated User',
+          designation: isSuper
+            ? 'Super Administrator'
+            : profile?.role === 'admin'
+            ? 'Administrator'
+            : 'Portal Member',
+          role: isSuper ? 'SuperAdmin' : profile?.role === 'admin' ? 'Admin' : 'Viewer',
+          isSuperAdmin: isSuper,
+          createdDate: new Date().toISOString().split('T')[0]
+        };
+        setCurrentLoggedInUser(userCred);
+      }
+    }
+    restoreSupabaseSession();
+
+    const { data: authListener } = onSupabaseAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setCurrentLoggedInUser(null);
+      }
+    });
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
+
   const handleLoginSuccess = (user: AdminCredential, message?: string) => {
     setCurrentLoggedInUser(user);
     const note = message || `Welcome back, ${user.name}! Authenticated as ${user.designation} (${user.role}).`;
@@ -199,7 +247,12 @@ export function App() {
     logActivity('User Authentication', `${user.name} (${user.mobileNumber}) logged into system as ${user.role}`);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabaseSignOut();
+    } catch (e) {
+      console.warn('Supabase sign out error:', e);
+    }
     if (currentLoggedInUser) {
       logActivity('User Logout', `${currentLoggedInUser.name} (${currentLoggedInUser.mobileNumber}) logged out.`);
     }

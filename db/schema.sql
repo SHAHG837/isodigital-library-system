@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- ISO CENTRAL DIRECTORY & PORTAL - SUPABASE POSTGRESQL SCHEMA
--- File: supabase_schema.sql (Also mirrored in db/schema.sql)
+-- File: db/schema.sql
 -- Description: Complete production schema with automatic user profile creation trigger,
 --              Row Level Security (RLS) policies, storage buckets, and sample data.
 -- ==============================================================================
@@ -242,10 +242,12 @@ ALTER TABLE public.applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_credentials ENABLE ROW LEVEL SECURITY;
 
 -- PROFILES POLICIES
+-- Anyone can view profile basic data
 CREATE POLICY "Public profiles are viewable by all"
   ON public.profiles FOR SELECT
   USING (true);
 
+-- Users can insert and update their own profile
 CREATE POLICY "Users can manage their own profile"
   ON public.profiles FOR ALL
   USING (auth.uid() = id);

@@ -1,22 +1,104 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Member, OfficeBearer } from '../types';
 
-// Supabase Connection Credentials configured as requested
-export const SUPABASE_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string) ||
-  'https://neyhuytsqfovqkxqvukh.supabase.co';
+/**
+ * Sanitizes and normalizes Supabase URL input.
+ * Handles cases where user enters:
+ * - "project url https://supabase.com/dashboard/project/neyhuytsqfovqkxqvukh"
+ * - "https://supabase.com/dashboard/project/neyhuytsqfovqkxqvukh"
+ * - "neyhuytsqfovqkxqvukh" (Project ID)
+ * - "https://neyhuytsqfovqkxqvukh.supabase.co/" (Trailing slashes)
+ * - Quotes, prefixes, or accidental text
+ */
+function sanitizeSupabaseUrl(raw: string | undefined): string {
+  const DEFAULT_URL = 'https://neyhuytsqfovqkxqvukh.supabase.co';
+  if (!raw || typeof raw !== 'string') return DEFAULT_URL;
 
-export const SUPABASE_ANON_KEY =
+  let url = raw.trim();
+  // Strip surrounding quotes
+  url = url.replace(/^["']|["']$/g, '').trim();
+
+  // Strip prefixes like "project url", "supabase url", "project_url =", "url:"
+  url = url.replace(/^(?:project\s*url|supabase\s*url|project_url|supabase_url|url)\s*[:=]?\s*/i, '').trim();
+
+  // If user passed dashboard link: https://supabase.com/dashboard/project/<project-ref>
+  const dashboardMatch = url.match(/supabase\.com\/dashboard\/project\/([a-zA-Z0-9_-]+)/i);
+  if (dashboardMatch && dashboardMatch[1]) {
+    return `https://${dashboardMatch[1]}.supabase.co`;
+  }
+
+  // If contains *.supabase.co anywhere in the string
+  const supabaseDomainMatch = url.match(/https?:\/\/([a-zA-Z0-9_-]+)\.supabase\.co/i);
+  if (supabaseDomainMatch) {
+    return supabaseDomainMatch[0];
+  }
+
+  // If only project ID was provided (e.g., neyhuytsqfovqkxqvukh)
+  if (/^[a-zA-Z0-9_-]{15,}$/.test(url)) {
+    return `https://${url}.supabase.co`;
+  }
+
+  // Check if it's already a valid HTTP or HTTPS URL
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.origin;
+    }
+  } catch {
+    // Fallback to safe default
+  }
+
+  return DEFAULT_URL;
+}
+
+/**
+ * Sanitizes Supabase Anon / Publishable key
+ */
+function sanitizeSupabaseKey(raw: string | undefined): string {
+  const DEFAULT_KEY = 'sb_publishable_f9bsgg11RbWIk5ASfFgJnQ_SUpB8MHK';
+  if (!raw || typeof raw !== 'string') return DEFAULT_KEY;
+
+  let key = raw.trim();
+  key = key.replace(/^["']|["']$/g, '').trim();
+  key = key.replace(/^(?:anon\s*key|publishable\s*key|api\s*key|key)\s*[:=]?\s*/i, '').trim();
+
+  if (key.length > 10) return key;
+  return DEFAULT_KEY;
+}
+
+// Supabase Connection Credentials sanitized and guaranteed to be valid HTTP/HTTPS URLs
+export const SUPABASE_URL = sanitizeSupabaseUrl(
+  (import.meta.env.VITE_SUPABASE_URL as string) ||
+  (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : undefined)
+);
+
+export const SUPABASE_ANON_KEY = sanitizeSupabaseKey(
   (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-  'sb_publishable_f9bsgg11RbWIk5ASfFgJnQ_SUpB8MHK';
+  (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : undefined)
+);
+
+// Safe Client Initializer with fallback
+function initSupabaseClient(): SupabaseClient {
+  try {
+    return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true
+      }
+    });
+  } catch (err) {
+    console.warn('Initial Supabase client creation warning, using fallback:', err);
+    return createClient('https://neyhuytsqfovqkxqvukh.supabase.co', 'sb_publishable_f9bsgg11RbWIk5ASfFgJnQ_SUpB8MHK', {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false
+      }
+    });
+  }
+}
 
 // Initialize Supabase Client
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true
-  }
-});
+export const supabase = initSupabaseClient();
 
 // Database Type Definitions
 export interface Profile {
@@ -166,6 +248,143 @@ export const DEFAULT_OPPORTUNITIES: Opportunity[] = [
     created_at: new Date().toISOString()
   }
 ];
+
+// ==============================================================================
+// SUPABASE AUTHENTICATION HELPERS
+// ==============================================================================
+
+export interface SignUpParams {
+  email: string;
+  password: string;
+  fullName: string;
+  role?: 'super_admin' | 'admin' | 'office_bearer' | 'member';
+  phone?: string;
+  city?: string;
+}
+
+/**
+ * Sign up a new user via Supabase Auth.
+ * Automatically triggers the PostgreSQL handle_new_user() trigger in db/schema.sql
+ * to create the user's row in public.profiles.
+ */
+export async function supabaseSignUp({
+  email,
+  password,
+  fullName,
+  role = 'member',
+  phone,
+  city
+}: SignUpParams) {
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          role,
+          phone,
+          city,
+          country: 'Pakistan'
+        }
+      }
+    });
+
+    if (error) {
+      return { success: false, error: error.message, data: null };
+    }
+
+    return {
+      success: true,
+      user: data.user,
+      session: data.session,
+      message: 'Account registered successfully!'
+    };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Sign-up failed', data: null };
+  }
+}
+
+/**
+ * Sign in existing user with email and password via Supabase Auth
+ */
+export async function supabaseSignIn(email: string, password: string) {
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) {
+      return { success: false, error: error.message, user: null, session: null };
+    }
+
+    return {
+      success: true,
+      user: data.user,
+      session: data.session,
+      message: 'Signed in successfully!'
+    };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Login failed', user: null, session: null };
+  }
+}
+
+/**
+ * Sign out current user from Supabase Auth
+ */
+export async function supabaseSignOut() {
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message };
+  }
+}
+
+/**
+ * Get active Supabase Auth Session
+ */
+export async function getSupabaseSession() {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) return null;
+    return data.session;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Listen to Supabase Auth State Changes
+ */
+export function onSupabaseAuthStateChange(callback: (event: string, session: any) => void) {
+  try {
+    return supabase.auth.onAuthStateChange(callback);
+  } catch (err) {
+    console.warn('onSupabaseAuthStateChange fallback:', err);
+    return { data: { subscription: { unsubscribe: () => {} } } };
+  }
+}
+
+/**
+ * Fetch profile row from public.profiles table
+ */
+export async function fetchProfile(userId: string): Promise<Profile | null> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error || !data) return null;
+    return data as Profile;
+  } catch {
+    return null;
+  }
+}
 
 // Helper: Test Supabase Connection
 export async function testSupabaseConnection(): Promise<{ connected: boolean; message: string; details?: any }> {

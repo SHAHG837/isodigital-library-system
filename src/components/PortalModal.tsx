@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { Member, OfficeBearer, AdminCredential } from '../types';
 import { SUPER_ADMIN_INFO, INITIAL_DESIGNATIONS } from '../data/initialData';
+import { supabaseSignIn, supabaseSignUp, fetchProfile } from '../lib/supabase';
+import { Loader2, Database } from 'lucide-react';
 
 interface PortalModalProps {
   isOpen: boolean;
@@ -86,17 +88,34 @@ export const PortalModal: React.FC<PortalModalProps> = ({
   };
 
   // Submit Normal Member
-  const handleMemberSubmit = (e: React.FormEvent) => {
+  const handleMemberSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!memName.trim() || !memCity.trim() || !memMobile.trim()) {
       alert('Please enter Name, City Name, and Mobile Number.');
       return;
     }
 
+    const cleanMobile = memMobile.trim();
+    const effectiveEmail = `${cleanMobile.replace(/[^0-9]/g, '')}@isopakistan.org`;
+
+    // 1. Supabase Auth registration
+    try {
+      await supabaseSignUp({
+        email: effectiveEmail,
+        password: 'memberPass123',
+        fullName: memName.trim(),
+        role: 'member',
+        phone: cleanMobile,
+        city: memCity.trim()
+      });
+    } catch (err) {
+      console.warn('Supabase Auth signup notice:', err);
+    }
+
     const newMemData = {
       fullName: memName.trim(),
-      mobileNumber: memMobile.trim(),
-      whatsappNumber: memWhatsapp.trim() || memMobile.trim(),
+      mobileNumber: cleanMobile,
+      whatsappNumber: memWhatsapp.trim() || cleanMobile,
       city: memCity.trim(),
       district: memDistrict.trim() || memCity.trim(),
       division: memCity.trim(),
@@ -120,20 +139,36 @@ export const PortalModal: React.FC<PortalModalProps> = ({
   };
 
   // Submit Cabinet Official
-  const handleOfficialSubmit = (e: React.FormEvent) => {
+  const handleOfficialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!obName.trim() || !obCity.trim() || !obMobile.trim()) {
       alert('Please enter Name, City Name, and Mobile Number.');
       return;
     }
 
+    const cleanMobile = obMobile.trim();
     const finalDesignation = obDesignation === 'Other' ? obCustomDesignation.trim() || 'Cabinet Officer' : obDesignation;
+    const effectiveEmail = `${cleanMobile.replace(/[^0-9]/g, '')}@isopakistan.org`;
+
+    // 1. Supabase Auth registration with office_bearer role
+    try {
+      await supabaseSignUp({
+        email: effectiveEmail,
+        password: 'officialPass123',
+        fullName: obName.trim(),
+        role: 'office_bearer',
+        phone: cleanMobile,
+        city: obCity.trim()
+      });
+    } catch (err) {
+      console.warn('Supabase Auth signup notice:', err);
+    }
 
     const newObData = {
       name: obName.trim(),
       designation: finalDesignation,
-      mobileNumber: obMobile.trim(),
-      whatsapp: obWhatsapp.trim() || obMobile.trim(),
+      mobileNumber: cleanMobile,
+      whatsapp: obWhatsapp.trim() || cleanMobile,
       city: obCity.trim(),
       district: obDistrict.trim() || obCity.trim(),
       division: obCity.trim(),
@@ -155,39 +190,75 @@ export const PortalModal: React.FC<PortalModalProps> = ({
     setObSubmitted(simulatedOb);
   };
 
-  // Handle Admin Login
-  const handleAdminLogin = (e: React.FormEvent) => {
+  // Handle Admin Login (Supabase Auth + Credentials)
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
-    const cleanMobile = loginMobile.trim();
+    const cleanInput = loginMobile.trim();
     const cleanPass = loginPassword.trim();
 
-    const matched = adminCredentials.find(
-      (acc) => acc.mobileNumber === cleanMobile && acc.password === cleanPass
-    );
+    try {
+      // 1. Supabase Auth Email Sign-In
+      if (cleanInput.includes('@')) {
+        const authRes = await supabaseSignIn(cleanInput, cleanPass);
+        if (authRes.success && authRes.user) {
+          const profile = await fetchProfile(authRes.user.id);
+          const isSuper =
+            profile?.role === 'super_admin' ||
+            cleanInput.toLowerCase() === 'syedmuhammadamir837@gmail.com';
+          const matched: AdminCredential = {
+            mobileNumber: profile?.phone || authRes.user.phone || cleanInput,
+            password: '***',
+            name: profile?.full_name || authRes.user.user_metadata?.full_name || cleanInput.split('@')[0],
+            designation: isSuper ? 'Super Administrator' : 'Authorized Administrator',
+            role: isSuper ? 'SuperAdmin' : 'Admin',
+            isSuperAdmin: isSuper,
+            createdDate: new Date().toISOString().split('T')[0]
+          };
+          onAdminLoginSuccess(matched);
+          onClose();
+          return;
+        } else if (authRes.error && !cleanInput.endsWith('@isopakistan.org')) {
+          setLoginError(`Supabase Auth: ${authRes.error}`);
+          return;
+        }
+      }
 
-    if (matched) {
-      if (!matched.isSuperAdmin && matched.role !== 'SuperAdmin' && matched.role !== 'Admin' && matched.role !== 'Manager') {
-        setLoginError('Access Denied: Regular member credentials cannot unlock Super Administrator Control Panel.');
+      // 2. Check local credentials
+      const matched = adminCredentials.find(
+        (acc) => acc.mobileNumber === cleanInput && acc.password === cleanPass
+      );
+
+      if (matched) {
+        if (!matched.isSuperAdmin && matched.role !== 'SuperAdmin' && matched.role !== 'Admin' && matched.role !== 'Manager') {
+          setLoginError('Access Denied: Regular member credentials cannot unlock Super Administrator Control Panel.');
+          return;
+        }
+        onAdminLoginSuccess(matched);
+        onClose();
         return;
       }
-      onAdminLoginSuccess(matched);
-      onClose();
-    } else if (cleanMobile === '03323475431' && cleanPass === 'admin123') {
-      const defaultSuperAdmin: AdminCredential = {
-        mobileNumber: '03323475431',
-        password: 'admin123',
-        name: 'Syed Muhammad Aamir Naqvi Al Bukhari',
-        designation: 'Chairman IT Support Council',
-        role: 'SuperAdmin',
-        isSuperAdmin: true,
-        createdDate: '2026-01-01'
-      };
-      onAdminLoginSuccess(defaultSuperAdmin);
-      onClose();
-    } else {
-      setLoginError('Authentication failed. Invalid Mobile Number ID or Password. Access denied.');
+
+      // 3. Fallback Super Admin
+      if (cleanInput === '03323475431' && cleanPass === 'admin123') {
+        const defaultSuperAdmin: AdminCredential = {
+          mobileNumber: '03323475431',
+          password: 'admin123',
+          name: 'Syed Muhammad Aamir Naqvi Al Bukhari',
+          designation: 'Chairman IT Support Council',
+          role: 'SuperAdmin',
+          isSuperAdmin: true,
+          createdDate: '2026-01-01'
+        };
+        onAdminLoginSuccess(defaultSuperAdmin);
+        onClose();
+        return;
+      }
+
+      setLoginError('Authentication failed. Invalid Mobile ID / Email or Password. Access denied.');
+    } catch (err: any) {
+      setLoginError(err?.message || 'Authentication error.');
     }
   };
 
