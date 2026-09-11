@@ -23,8 +23,7 @@ import {
   ChevronRight,
   Menu,
   X,
-  LogOut,
-  Briefcase
+  LogOut
 } from 'lucide-react';
 import { ActiveTab, AdminCredential } from '../types';
 import { SUPER_ADMIN_INFO } from '../data/initialData';
@@ -85,7 +84,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'Digital Services',
       items: [
-        { id: 'opportunities' as ActiveTab, label: 'Opportunities & Jobs', icon: Briefcase, badge: 'Supabase' },
         { id: 'shajra' as ActiveTab, label: 'Shajra Lineage', icon: GitBranch },
         { id: 'membershipCard' as ActiveTab, label: isRegularMember ? 'My Membership Card' : 'Card Generator', icon: CreditCard },
         { id: 'events' as ActiveTab, label: 'Events & Conventions', icon: Calendar },
