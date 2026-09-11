@@ -37,6 +37,7 @@ import { ExportImportModule } from './components/ExportImportModule';
 import { GoogleSheetsModule } from './components/GoogleSheetsModule';
 import { AiAssistantModule } from './components/AiAssistantModule';
 import { AuditLogsModule } from './components/AuditLogsModule';
+import { OpportunitiesModule } from './components/OpportunitiesModule';
 import { Footer } from './components/Footer';
 import { PortalModal } from './components/PortalModal';
 import { AuthLoginGate } from './components/AuthLoginGate';
@@ -605,7 +606,7 @@ export function App() {
   const isRegularMember = Boolean(currentLoggedInUser && !isAdminOrManager);
 
   // Route protection: If regular member attempts to access an admin-only module, route to 'members'
-  const allowedMemberTabs: ActiveTab[] = ['dashboard', 'members', 'hierarchy', 'shajra', 'membershipCard', 'events', 'aiAssistant'];
+  const allowedMemberTabs: ActiveTab[] = ['dashboard', 'members', 'hierarchy', 'opportunities', 'shajra', 'membershipCard', 'events', 'aiAssistant'];
   const effectiveActiveTab = (isRegularMember && !allowedMemberTabs.includes(activeTab)) ? 'members' : activeTab;
 
   return (
@@ -782,6 +783,14 @@ export function App() {
 
           {effectiveActiveTab === 'aiAssistant' && (
             <AiAssistantModule
+              members={members}
+              officeBearers={officeBearers}
+            />
+          )}
+
+          {effectiveActiveTab === 'opportunities' && (
+            <OpportunitiesModule
+              currentUser={currentLoggedInUser}
               members={members}
               officeBearers={officeBearers}
             />

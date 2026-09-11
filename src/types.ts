@@ -161,6 +161,7 @@ export type ActiveTab =
   | 'dashboard'
   | 'members'
   | 'officeBearers'
+  | 'opportunities'
   | 'hierarchy'
   | 'superAdmin'
   | 'adminRbac'

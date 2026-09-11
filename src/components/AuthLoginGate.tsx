@@ -25,18 +25,16 @@ interface AuthLoginGateProps {
   adminCredentials: AdminCredential[];
   onLoginSuccess: (credential: AdminCredential, welcomeMessage?: string) => void;
   onRegisterMember: (memberData: Omit<Member, 'id' | 'joiningDate' | 'status'>) => void;
-  onRegisterOfficeBearer: (bearerData: Omit<OfficeBearer, 'id' | 'appointmentDate' | 'status'>) => void;
+  onRegisterOfficeBearer?: (bearerData: Omit<OfficeBearer, 'id' | 'appointmentDate' | 'status'>) => void;
 }
 
 export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
   adminCredentials,
   onLoginSuccess,
-  onRegisterMember,
-  onRegisterOfficeBearer
+  onRegisterMember
 }) => {
-  // Admin & Cabinet Hidden Option State (opens only when clicked below)
+  // Admin Panel Hidden Gate State (opens only when clicked below)
   const [showAdminCabinetPanel, setShowAdminCabinetPanel] = useState<boolean>(false);
-  const [adminCabinetTab, setAdminCabinetTab] = useState<'admin' | 'official'>('admin');
 
   // Admin Login Inputs
   const [mobileInput, setMobileInput] = useState('');
@@ -63,12 +61,6 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
   const [memMobile, setMemMobile] = useState('');
   const [memCity, setMemCity] = useState('');
   const [memDistrict, setMemDistrict] = useState('');
-
-  // Office Bearer Registration Inputs
-  const [obName, setObName] = useState('');
-  const [obMobile, setObMobile] = useState('');
-  const [obDesignation, setObDesignation] = useState('Central Executive Member');
-  const [obCity, setObCity] = useState('');
 
   // Submit Admin Login
   const handleAdminLoginSubmit = (e: React.FormEvent) => {
@@ -183,49 +175,6 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
     onLoginSuccess(
       memberCredential,
       `Welcome back, ${firstName}! Member Sign In Successful.`
-    );
-  };
-
-  // Submit Official Registration
-  const handleOfficialSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!obName.trim() || !obMobile.trim() || !obCity.trim()) {
-      alert('Please enter Name, Mobile Number, and City Name.');
-      return;
-    }
-
-    const newOb = {
-      name: obName.trim(),
-      designation: obDesignation,
-      mobileNumber: obMobile.trim(),
-      whatsapp: obMobile.trim(),
-      city: obCity.trim(),
-      district: obCity.trim(),
-      division: obCity.trim(),
-      province: 'Sindh',
-      country: 'Pakistan',
-      profilePhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300',
-      notes: 'Appointed via Digital Library Portal',
-      status: 'Active' as const
-    };
-
-    onRegisterOfficeBearer(newOb);
-
-    const firstName = obName.trim().split(' ')[0] || obName.trim();
-
-    const officialCredential: AdminCredential = {
-      mobileNumber: obMobile.trim(),
-      password: 'officialPass123',
-      name: obName.trim(),
-      designation: obDesignation,
-      role: 'Manager',
-      isSuperAdmin: false,
-      createdDate: new Date().toISOString().split('T')[0]
-    };
-
-    onLoginSuccess(
-      officialCredential,
-      `Welcome back, ${firstName} (${obDesignation})! Cabinet Access Granted.`
     );
   };
 
@@ -431,7 +380,7 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
               )}
             </div>
 
-            {/* Hidden Official Cabinet & Admin Login - Only opens when clicked below */}
+            {/* Authorized Administrator Access (Protected Gate) */}
             <div className="mt-6 pt-4 border-t border-slate-800">
               <button
                 type="button"
@@ -440,10 +389,10 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
               >
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-amber-400" />
-                  <span>Official Cabinet & Administrator Access</span>
+                  <span>Authorized Administrator Access</span>
                 </div>
                 <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full">
-                  {showAdminCabinetPanel ? 'Hide Option ▲' : 'Click to Open Option ▼'}
+                  {showAdminCabinetPanel ? 'Hide Panel ▲' : 'Open Admin Login ▼'}
                 </span>
               </button>
 
@@ -453,40 +402,8 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-amber-400" />
                       <span className="text-xs font-black uppercase text-amber-300 tracking-wider">
-                        Authorized Credentials Required
+                        Authorized Administrator Credentials
                       </span>
-                    </div>
-
-                    {/* Switcher between Admin Credential and Cabinet Official */}
-                    <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800 gap-1 text-[10px]">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAdminCabinetTab('admin');
-                          setLoginError('');
-                        }}
-                        className={`px-2.5 py-1 rounded-md font-bold transition-all ${
-                          adminCabinetTab === 'admin'
-                            ? 'bg-amber-600 text-white shadow-sm'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        Admin Credentials
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAdminCabinetTab('official');
-                          setLoginError('');
-                        }}
-                        className={`px-2.5 py-1 rounded-md font-bold transition-all ${
-                          adminCabinetTab === 'official'
-                            ? 'bg-emerald-600 text-white shadow-sm'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        Cabinet Official
-                      </button>
                     </div>
                   </div>
 
@@ -497,125 +414,43 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
                     </div>
                   )}
 
-                  {adminCabinetTab === 'admin' ? (
-                    <form onSubmit={handleAdminLoginSubmit} className="space-y-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          Admin Mobile Number (ID) <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          type="tel"
-                          required
-                          placeholder="e.g. 03323475431"
-                          value={mobileInput}
-                          onChange={(e) => setMobileInput(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        />
-                      </div>
+                  <form onSubmit={handleAdminLoginSubmit} className="space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Admin Mobile Number (ID) <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="Enter authorized Admin ID or Mobile..."
+                        value={mobileInput}
+                        onChange={(e) => setMobileInput(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
 
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          Admin Password <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••"
-                          value={passwordInput}
-                          onChange={(e) => setPasswordInput(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        />
-                      </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Admin Password <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="Enter admin password..."
+                        value={passwordInput}
+                        onChange={(e) => setPasswordInput(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
 
-                      <div className="flex items-center justify-between pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMobileInput('03323475431');
-                            setPasswordInput('admin123');
-                          }}
-                          className="text-[10px] text-amber-400/90 hover:text-amber-300 underline font-mono"
-                        >
-                          Auto-fill Default Super Admin (03323475431)
-                        </button>
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs rounded-xl shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                      >
-                        <ShieldCheck className="w-4 h-4" />
-                        <span>Log In to Admin Panel</span>
-                      </button>
-                    </form>
-                  ) : (
-                    <form onSubmit={handleOfficialSubmit} className="space-y-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          Official Full Name <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Syed Hassan Abbas Naqvi"
-                          value={obName}
-                          onChange={(e) => setObName(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                            Designation <span className="text-red-400">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="e.g. Central IT Secretary"
-                            value={obDesignation}
-                            onChange={(e) => setObDesignation(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                            Mobile Number <span className="text-red-400">*</span>
-                          </label>
-                          <input
-                            type="tel"
-                            required
-                            placeholder="e.g. 03009876543"
-                            value={obMobile}
-                            onChange={(e) => setObMobile(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          City Name <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Lahore"
-                          value={obCity}
-                          onChange={(e) => setObCity(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                      >
-                        <Building2 className="w-4 h-4" />
-                        <span>Authenticate Cabinet Official</span>
-                      </button>
-                    </form>
-                  )}
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs rounded-xl shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer mt-3"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Log In to Admin Panel</span>
+                    </button>
+                  </form>
                 </div>
               )}
             </div>
