@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ISO_LOGO_URL, SUPER_ADMIN_INFO } from '../data/initialData';
 import {
   ShieldCheck,
@@ -6,74 +6,586 @@ import {
   Phone,
   KeyRound,
   UserCheck,
-  Building2,
   CheckCircle2,
   AlertCircle,
-  Globe,
   User,
-  Sparkles,
   ArrowRight,
   Shield,
   FileText,
-  Copy,
   ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Mail,
+  RefreshCw,
+  Copy,
   Check
 } from 'lucide-react';
-import { AdminCredential, Member, OfficeBearer } from '../types';
+import { AdminCredential, Member, OfficeBearer, AdminUser } from '../types';
+import { OathFormModal } from './OathFormModal';
+import {
+  isValidEmail,
+  checkEmailUniqueness,
+  findAccountByEmailOrId,
+  sendEmailOtp,
+  verifyEmailOtp,
+  suggestEmailCorrection
+} from '../services/authOtpService';
 
 interface AuthLoginGateProps {
   adminCredentials: AdminCredential[];
+  members: Member[];
+  admins: AdminUser[];
   onLoginSuccess: (credential: AdminCredential, welcomeMessage?: string) => void;
   onRegisterMember: (memberData: Omit<Member, 'id' | 'joiningDate' | 'status'>) => void;
   onRegisterOfficeBearer: (bearerData: Omit<OfficeBearer, 'id' | 'appointmentDate' | 'status'>) => void;
 }
 
+const COMPULSORY_GOOGLE_FORM_URL = 'https://forms.gle/7NiEiCtEr5BFsmkY8';
+
 export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
   adminCredentials,
+  members,
+  admins,
   onLoginSuccess,
-  onRegisterMember,
-  onRegisterOfficeBearer
+  onRegisterMember
 }) => {
-  // Admin & Cabinet Hidden Option State (opens only when clicked below)
-  const [showAdminCabinetPanel, setShowAdminCabinetPanel] = useState<boolean>(false);
-  const [adminCabinetTab, setAdminCabinetTab] = useState<'admin' | 'official'>('admin');
+  // Gate Tab: Switch between Member Portal (default) & Admin Panel (discreet)
+  const [activeGateTab, setActiveGateTab] = useState<'member' | 'admin'>('member');
 
-  // Admin Login Inputs
-  const [mobileInput, setMobileInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [copySuccess, setCopySuccess] = useState(false);
+  // Member Auth Sub-tab: 'signin' (existing member OTP) vs 'signup' (new member registration)
+  const [memberAuthMode, setMemberAuthMode] = useState<'signin' | 'signup'>('signin');
 
-  const handleCopySuperAdminLink = () => {
-    const url = `${window.location.origin}${window.location.pathname}?portal=superAdmin`;
-    navigator.clipboard.writeText(url);
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 2500);
+  // ==========================================
+  // 1. MEMBER SIGN IN (EMAIL OTP AUTHENTICATION)
+  // ==========================================
+  const [signInInput, setSignInInput] = useState(''); // Email or Member ID
+  const [signInOtpStep, setSignInOtpStep] = useState(false);
+  const [signInOtpCode, setSignInOtpCode] = useState('');
+  const [signInMatchedAccount, setSignInMatchedAccount] = useState<{
+    member?: Member;
+    admin?: AdminUser;
+    id: string;
+    name: string;
+    email: string;
+    mobile: string;
+  } | null>(null);
+  const [signInLoading, setSignInLoading] = useState(false);
+  const [signInError, setSignInError] = useState('');
+  const [signInSuccessMsg, setSignInSuccessMsg] = useState('');
+  const [signInOfflineCode, setSignInOfflineCode] = useState<string | null>(null);
+  const [showSignInBackupCode, setShowSignInBackupCode] = useState(false);
+  const [signInResendTimer, setSignInResendTimer] = useState(0);
+
+  // Timer for OTP resend cooldown
+  useEffect(() => {
+    let timer: any;
+    if (signInResendTimer > 0) {
+      timer = setInterval(() => setSignInResendTimer((t) => t - 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [signInResendTimer]);
+
+  // Handle Step 1: Lookup registered member & Send OTP to registered email
+  const handleMemberSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSignInError('');
+    setSignInSuccessMsg('');
+    setSignInOfflineCode(null);
+
+    const cleanInput = signInInput.trim();
+    if (!cleanInput) {
+      setSignInError('Please enter your Registered Email Address or Member ID.');
+      return;
+    }
+
+    // Lookup account in members (or admins)
+    const lookup = findAccountByEmailOrId(cleanInput, members, admins, adminCredentials);
+    if (!lookup.found || !lookup.email) {
+      setSignInError(
+        `No registered member found for "${cleanInput}". One email is strictly linked to one ID. Please verify your email or click "Join as New Member".`
+      );
+      return;
+    }
+
+    // Set matched account details
+    const matched = {
+      member: lookup.member,
+      admin: lookup.admin,
+      id: lookup.id || 'N/A',
+      name: lookup.name || 'Member',
+      email: lookup.email,
+      mobile: lookup.mobile || ''
+    };
+    setSignInMatchedAccount(matched);
+
+    // Send OTP to registered email
+    setSignInLoading(true);
+    try {
+      const res = await sendEmailOtp(lookup.email, lookup.name, lookup.id, 'login');
+      setSignInLoading(false);
+      if (res.success) {
+        setSignInOtpStep(true);
+        setSignInOfflineCode(res.offlineCode || res.backupCode || null);
+        if (res.emailDelivered) {
+          setSignInSuccessMsg(`A 6-digit verification code has been dispatched to ${lookup.email}. Please check your inbox and spam folder.`);
+        } else {
+          setSignInSuccessMsg(`Email server offline. Verification code issued for session.`);
+        }
+        setSignInResendTimer(30);
+      } else {
+        setSignInError(res.error || 'Failed to dispatch OTP to registered email.');
+      }
+    } catch (err: any) {
+      setSignInLoading(false);
+      setSignInError(err.message || 'Error communicating with OTP service.');
+    }
   };
 
-  // Member Mode State (Sign Up vs Sign In)
-  const [memberAuthMode, setMemberAuthMode] = useState<'signup' | 'signin'>('signup');
-
-  // Member Sign In Inputs
-  const [memSignInName, setMemSignInName] = useState('');
-  const [memSignInMobile, setMemSignInMobile] = useState('');
-
-  // Member Registration Inputs
-  const [memName, setMemName] = useState('');
-  const [memMobile, setMemMobile] = useState('');
-  const [memCity, setMemCity] = useState('');
-  const [memDistrict, setMemDistrict] = useState('');
-
-  // Office Bearer Registration Inputs
-  const [obName, setObName] = useState('');
-  const [obMobile, setObMobile] = useState('');
-  const [obDesignation, setObDesignation] = useState('Central Executive Member');
-  const [obCity, setObCity] = useState('');
-
-  // Submit Admin Login
-  const handleAdminLoginSubmit = (e: React.FormEvent) => {
+  // Handle Step 2: Verify OTP and log in as member
+  const handleMemberVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoginError('');
+    setSignInError('');
+
+    if (!signInMatchedAccount?.email) {
+      setSignInError('Session expired. Please enter your registered email again.');
+      setSignInOtpStep(false);
+      return;
+    }
+
+    const cleanOtp = signInOtpCode.trim();
+    if (!cleanOtp || cleanOtp.length !== 6) {
+      setSignInError('Please enter the complete 6-digit OTP verification code.');
+      return;
+    }
+
+    setSignInLoading(true);
+    try {
+      const res = await verifyEmailOtp(signInMatchedAccount.email, cleanOtp);
+      setSignInLoading(false);
+
+      if (res.success) {
+        // Authenticate as member
+        const memberCred: AdminCredential = {
+          mobileNumber: signInMatchedAccount.mobile || '03000000000',
+          password: 'email_otp_verified',
+          name: signInMatchedAccount.name,
+          designation: 'ISO General Member',
+          role: 'Viewer',
+          isSuperAdmin: false,
+          createdDate: new Date().toISOString().split('T')[0],
+          email: signInMatchedAccount.email,
+          memberId: signInMatchedAccount.id
+        };
+
+        const firstName = signInMatchedAccount.name.split(' ')[0] || signInMatchedAccount.name;
+        onLoginSuccess(
+          memberCred,
+          `Welcome back, ${firstName}! Email verified (${signInMatchedAccount.email}) linked to ID ${signInMatchedAccount.id}.`
+        );
+      } else {
+        setSignInError(res.error || 'Invalid verification code. Please check your email.');
+      }
+    } catch (err: any) {
+      setSignInLoading(false);
+      setSignInError(err.message || 'Verification failed. Please try again.');
+    }
+  };
+
+  // Resend OTP for sign-in
+  const handleResendSignInOtp = async () => {
+    if (signInResendTimer > 0 || !signInMatchedAccount?.email) return;
+    setSignInLoading(true);
+    setSignInError('');
+    setSignInSuccessMsg('');
+    try {
+      const res = await sendEmailOtp(
+        signInMatchedAccount.email,
+        signInMatchedAccount.name,
+        signInMatchedAccount.id,
+        'login'
+      );
+      setSignInLoading(false);
+      if (res.success) {
+        setSignInOfflineCode(res.offlineCode || res.backupCode || null);
+        if (res.emailDelivered) {
+          setSignInSuccessMsg(`A fresh 6-digit verification code has been dispatched to ${signInMatchedAccount.email}.`);
+        } else {
+          setSignInSuccessMsg(`Email server is offline. Fresh verification code issued for session.`);
+        }
+        setSignInResendTimer(30);
+      } else {
+        setSignInError(res.error || 'Failed to resend code.');
+      }
+    } catch (err: any) {
+      setSignInLoading(false);
+      setSignInError('Failed to resend OTP.');
+    }
+  };
+
+  // ==========================================
+  // 2. NEW MEMBER REGISTRATION WITH 1 EMAIL PER 1 ID
+  // ==========================================
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regMobile, setRegMobile] = useState('');
+  const [regCity, setRegCity] = useState('');
+  const [regDistrict, setRegDistrict] = useState('');
+
+  // Registration OTP step
+  const [regOtpStep, setRegOtpStep] = useState(false);
+  const [regOtpCode, setRegOtpCode] = useState('');
+  const [regOfflineCode, setRegOfflineCode] = useState<string | null>(null);
+  const [showRegBackupCode, setShowRegBackupCode] = useState(false);
+  const [regLoading, setRegLoading] = useState(false);
+  const [regError, setRegError] = useState('');
+  const [regSuccessMsg, setRegSuccessMsg] = useState('');
+  const [regResendTimer, setRegResendTimer] = useState(0);
+
+  // Compulsory Form Notice Modal State after joining
+  const [newMemberJoinedData, setNewMemberJoinedData] = useState<{ name: string; cred: AdminCredential } | null>(null);
+
+  useEffect(() => {
+    let timer: any;
+    if (regResendTimer > 0) {
+      timer = setInterval(() => setRegResendTimer((t) => t - 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [regResendTimer]);
+
+  // Real-time Email Uniqueness Verification ("One email is for one ID")
+  const emailCheck = regEmail ? checkEmailUniqueness(regEmail, members, admins) : { isUnique: true };
+
+  // Handle Step 1 of Join: Validate inputs, check 1-email-1-id rule, send verification OTP
+  const handleRegSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegError('');
+    setRegSuccessMsg('');
+    setRegOfflineCode(null);
+    setShowRegBackupCode(false);
+
+    const cleanName = regName.trim();
+    const cleanEmail = regEmail.trim().toLowerCase();
+    const cleanMobile = regMobile.trim();
+    const cleanCity = regCity.trim();
+
+    if (!cleanName || !cleanEmail || !cleanMobile || !cleanCity) {
+      setRegError('Please complete all required fields (Full Name, Email, Mobile, and City).');
+      return;
+    }
+
+    if (!isValidEmail(cleanEmail)) {
+      setRegError('Please enter a valid email address (e.g. name@example.com).');
+      return;
+    }
+
+    // STRICT CHECK: "One email is for one ID"
+    const uniqueness = checkEmailUniqueness(cleanEmail, members, admins);
+    if (!uniqueness.isUnique) {
+      setRegError(
+        `One Email For One ID Rule: This email (${cleanEmail}) is already registered with ${uniqueness.conflictType} ID: ${uniqueness.conflictId} (${uniqueness.conflictName}). In accordance with ISO policy, one email is strictly reserved for one ID only. Please sign in with this email or provide a different email address.`
+      );
+      return;
+    }
+
+    // Send verification OTP to new email
+    setRegLoading(true);
+    try {
+      const res = await sendEmailOtp(cleanEmail, cleanName, undefined, 'registration');
+      setRegLoading(false);
+      if (res.success) {
+        setRegOtpStep(true);
+        setRegOfflineCode(res.offlineCode || res.backupCode || null);
+        if (res.emailDelivered) {
+          setRegSuccessMsg(`A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your email inbox and spam folder.`);
+        } else {
+          setRegSuccessMsg(`Email server offline. Verification code issued for registration.`);
+        }
+        setRegResendTimer(30);
+      } else {
+        setRegError(res.error || 'Failed to dispatch verification code.');
+      }
+    } catch (err: any) {
+      setRegLoading(false);
+      setRegError(err.message || 'Error dispatching OTP code.');
+    }
+  };
+
+  // Resend OTP for new member registration
+  const handleResendRegOtp = async () => {
+    if (regResendTimer > 0 || !regEmail) return;
+    setRegLoading(true);
+    setRegError('');
+    setRegSuccessMsg('');
+    try {
+      const cleanEmail = regEmail.trim().toLowerCase();
+      const res = await sendEmailOtp(cleanEmail, regName.trim(), undefined, 'registration');
+      setRegLoading(false);
+      if (res.success) {
+        setRegOfflineCode(res.offlineCode || res.backupCode || null);
+        if (res.emailDelivered) {
+          setRegSuccessMsg(`A fresh 6-digit verification code has been dispatched to ${cleanEmail}.`);
+        } else {
+          setRegSuccessMsg(`Fresh verification code issued.`);
+        }
+        setRegResendTimer(30);
+      } else {
+        setRegError(res.error || 'Failed to resend code.');
+      }
+    } catch (err: any) {
+      setRegLoading(false);
+      setRegError('Failed to resend OTP.');
+    }
+  };
+
+  // Handle Step 2 of Join: Verify OTP, create member with unique ID and bind 1-to-1 with email
+  const handleRegVerifyOtpAndJoin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegError('');
+
+    const cleanOtp = regOtpCode.trim();
+    if (!cleanOtp || cleanOtp.length !== 6) {
+      setRegError('Please enter the full 6-digit verification code sent to your email.');
+      return;
+    }
+
+    setRegLoading(true);
+    try {
+      const res = await verifyEmailOtp(regEmail.trim().toLowerCase(), cleanOtp);
+      setRegLoading(false);
+
+      if (!res.success) {
+        setRegError(res.error || 'Invalid verification code. Please check and try again.');
+        return;
+      }
+
+      // Re-verify uniqueness before final insertion
+      const uniqueness = checkEmailUniqueness(regEmail.trim().toLowerCase(), members, admins);
+      if (!uniqueness.isUnique) {
+        setRegError(`Registration conflict: Email is already assigned to ID ${uniqueness.conflictId}.`);
+        return;
+      }
+
+      // Generate unique ID for this new member
+      const newMemberId = `ISO-MEM-2026-${String(members.length + 1).padStart(3, '0')}`;
+
+      const newMemberData = {
+        fullName: regName.trim(),
+        mobileNumber: regMobile.trim(),
+        whatsappNumber: regMobile.trim(),
+        city: regCity.trim(),
+        district: regDistrict.trim() || regCity.trim(),
+        division: regCity.trim(),
+        province: 'Sindh',
+        country: 'Pakistan',
+        email: regEmail.trim().toLowerCase(),
+        address: `District ${regCity.trim()}, Pakistan`,
+        profilePhoto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+        notes: `Registered via Email OTP (${regEmail.trim().toLowerCase()}) - Bound to ID ${newMemberId}`,
+        oathSubmitted: true,
+        oathDate: new Date().toISOString(),
+        status: 'Pending' as const // Strict requirement: New members start in Pending status until approved by Super Admin
+      };
+
+      onRegisterMember(newMemberData);
+
+      const firstName = regName.trim().split(' ')[0] || regName.trim();
+      const memberCredential: AdminCredential = {
+        mobileNumber: regMobile.trim(),
+        password: 'email_otp_verified',
+        name: regName.trim(),
+        designation: 'ISO General Member',
+        role: 'Viewer',
+        isSuperAdmin: false,
+        createdDate: new Date().toISOString().split('T')[0],
+        email: regEmail.trim().toLowerCase(),
+        memberId: newMemberId
+      };
+
+      // Show In-App Official Oath Form (حلف نامہ) directly
+      setNewMemberJoinedData({
+        name: firstName,
+        cred: memberCredential
+      });
+    } catch (err: any) {
+      setRegLoading(false);
+      setRegError(err.message || 'Verification error.');
+    }
+  };
+
+  // Finalize entry after compulsory dialog
+  const handleFinalizeMemberEntry = () => {
+    if (newMemberJoinedData) {
+      onLoginSuccess(
+        newMemberJoinedData.cred,
+        `Welcome to ISO Portal, ${newMemberJoinedData.name}! Your membership card application has been submitted and is currently Pending Super Admin approval.`
+      );
+      setNewMemberJoinedData(null);
+    }
+  };
+
+  // ==========================================
+  // 3. ADMIN PANEL LOGIN (EMAIL OTP OR MOBILE PASSWORD)
+  // ==========================================
+  const [adminAuthMethod, setAdminAuthMethod] = useState<'emailOtp' | 'password'>('emailOtp');
+  const [adminEmailInput, setAdminEmailInput] = useState('');
+  const [adminOtpStep, setAdminOtpStep] = useState(false);
+  const [adminOtpCode, setAdminOtpCode] = useState('');
+  const [adminOfflineCode, setAdminOfflineCode] = useState<string | null>(null);
+  const [showAdminBackupCode, setShowAdminBackupCode] = useState(false);
+  const [adminResendTimer, setAdminResendTimer] = useState(0);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState('');
+  const [adminSuccessMsg, setAdminSuccessMsg] = useState('');
+  const [adminMatchedAcc, setAdminMatchedAcc] = useState<AdminUser | AdminCredential | null>(null);
+
+  useEffect(() => {
+    let timer: any;
+    if (adminResendTimer > 0) {
+      timer = setInterval(() => setAdminResendTimer((t) => t - 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [adminResendTimer]);
+
+  // Standard Mobile + Password Inputs
+  const [mobileInput, setMobileInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Hidden Cabinet Official Login Option
+  const [showCabinetOptionBelowAdmin, setShowCabinetOptionBelowAdmin] = useState(false);
+  const [cabinetMobileInput, setCabinetMobileInput] = useState('');
+  const [cabinetPasswordInput, setCabinetPasswordInput] = useState('');
+  const [showCabinetPassword, setShowCabinetPassword] = useState(false);
+  const [cabinetLoginError, setCabinetLoginError] = useState('');
+
+  // Send OTP to registered Admin Email
+  const handleAdminSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminError('');
+    setAdminSuccessMsg('');
+    setAdminOfflineCode(null);
+
+    const cleanEmail = adminEmailInput.trim().toLowerCase();
+    if (!cleanEmail) {
+      setAdminError('Please enter your registered Administrator Email address.');
+      return;
+    }
+
+    // Check if email matches Super Admin or any Admin
+    let matched: any = admins.find((a) => a.email.trim().toLowerCase() === cleanEmail);
+    if (!matched && cleanEmail === SUPER_ADMIN_INFO.email.toLowerCase()) {
+      matched = {
+        name: SUPER_ADMIN_INFO.name,
+        email: SUPER_ADMIN_INFO.email,
+        phone: SUPER_ADMIN_INFO.mobileNumber,
+        designation: SUPER_ADMIN_INFO.designation,
+        role: 'SuperAdmin',
+        isSuperAdmin: true
+      };
+    }
+
+    if (!matched) {
+      setAdminError(`No administrator account is linked to ${cleanEmail}. One email is for one ID.`);
+      return;
+    }
+
+    setAdminMatchedAcc(matched);
+    setAdminLoading(true);
+    try {
+      const res = await sendEmailOtp(cleanEmail, matched.name, matched.id, 'admin');
+      setAdminLoading(false);
+      if (res.success) {
+        setAdminOtpStep(true);
+        setAdminOfflineCode(res.offlineCode || res.backupCode || null);
+        if (res.emailDelivered) {
+          setAdminSuccessMsg(`A 6-digit OTP verification code has been dispatched to ${cleanEmail}. Please check your email inbox and spam folder.`);
+        } else {
+          setAdminSuccessMsg(`Email server offline. Verification code issued for administrator session.`);
+        }
+        setAdminResendTimer(30);
+      } else {
+        setAdminError(res.error || 'Failed to dispatch admin OTP.');
+      }
+    } catch (err: any) {
+      setAdminLoading(false);
+      setAdminError(err.message || 'Error communicating with OTP service.');
+    }
+  };
+
+  // Resend Admin OTP
+  const handleResendAdminOtp = async () => {
+    if (adminResendTimer > 0 || !adminEmailInput) return;
+    setAdminLoading(true);
+    setAdminError('');
+    setAdminSuccessMsg('');
+    try {
+      const cleanEmail = adminEmailInput.trim().toLowerCase();
+      const res = await sendEmailOtp(cleanEmail, adminMatchedAcc?.name, (adminMatchedAcc as any)?.id, 'admin');
+      setAdminLoading(false);
+      if (res.success) {
+        setAdminOfflineCode(res.offlineCode || res.backupCode || null);
+        if (res.emailDelivered) {
+          setAdminSuccessMsg(`A fresh 6-digit OTP code has been dispatched to ${cleanEmail}.`);
+        } else {
+          setAdminSuccessMsg(`Fresh verification code issued for administrator session.`);
+        }
+        setAdminResendTimer(30);
+      } else {
+        setAdminError(res.error || 'Failed to resend admin OTP.');
+      }
+    } catch (err: any) {
+      setAdminLoading(false);
+      setAdminError('Failed to resend admin OTP.');
+    }
+  };
+
+  // Verify Admin OTP
+  const handleAdminVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminError('');
+
+    const cleanOtp = adminOtpCode.trim();
+    if (!cleanOtp || cleanOtp.length !== 6) {
+      setAdminError('Please enter the complete 6-digit OTP verification code.');
+      return;
+    }
+
+    setAdminLoading(true);
+    try {
+      const res = await verifyEmailOtp(adminEmailInput.trim().toLowerCase(), cleanOtp);
+      setAdminLoading(false);
+
+      if (res.success) {
+        const isSuper = adminMatchedAcc?.isSuperAdmin || adminMatchedAcc?.role === 'SuperAdmin';
+        const adminCred: AdminCredential = {
+          mobileNumber: adminMatchedAcc?.phone || adminMatchedAcc?.mobileNumber || '03323475431',
+          password: 'admin_otp_verified',
+          name: adminMatchedAcc?.name || 'Administrator',
+          designation: adminMatchedAcc?.designation || 'Administrator',
+          role: (adminMatchedAcc?.role as any) || 'SuperAdmin',
+          isSuperAdmin: Boolean(isSuper),
+          createdDate: '2026-01-01',
+          email: adminEmailInput.trim().toLowerCase(),
+          memberId: adminMatchedAcc?.id || 'ADM-0001'
+        };
+
+        onLoginSuccess(
+          adminCred,
+          `Welcome, ${adminCred.name}! Admin Email Verified (${adminCred.email}) with ${adminCred.role} access.`
+        );
+      } else {
+        setAdminError(res.error || 'Invalid OTP code.');
+      }
+    } catch (err: any) {
+      setAdminLoading(false);
+      setAdminError(err.message || 'Verification error.');
+    }
+  };
+
+  // Submit Admin Mobile & Password
+  const handleAdminPasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminError('');
 
     const cleanMobile = mobileInput.trim();
     const cleanPass = passwordInput.trim();
@@ -96,540 +608,970 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
         designation: 'Chairman IT Support Council',
         role: 'SuperAdmin',
         isSuperAdmin: true,
-        createdDate: '2026-01-01'
+        createdDate: '2026-01-01',
+        email: SUPER_ADMIN_INFO.email
       };
       onLoginSuccess(
         defaultSuperAdmin,
         `Welcome back, Syed Muhammad Aamir Naqvi! Super Administrator Access Granted.`
       );
     } else {
-      setLoginError(
-        'Authentication failed. Invalid Mobile Number ID or Password.'
+      setAdminError('Authentication failed. Invalid Mobile ID or Password.');
+    }
+  };
+
+  // Submit Cabinet Official
+  const handleCabinetLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCabinetLoginError('');
+
+    const cleanMobile = cabinetMobileInput.trim();
+    const cleanPass = cabinetPasswordInput.trim();
+
+    const found = adminCredentials.find(
+      (acc) => acc.mobileNumber === cleanMobile && acc.password === cleanPass
+    );
+
+    if (found) {
+      onLoginSuccess(
+        found,
+        `Welcome back, ${found.name}! Logged into Admin Panel as ${found.designation} (${found.role}).`
       );
+    } else if (cleanMobile === '03323475431' && cleanPass === 'admin123') {
+      const defaultSuperAdmin: AdminCredential = {
+        mobileNumber: '03323475431',
+        password: 'admin123',
+        name: 'Syed Muhammad Aamir Naqvi Al Bukhari',
+        designation: 'Chairman IT Support Council',
+        role: 'SuperAdmin',
+        isSuperAdmin: true,
+        createdDate: '2026-01-01',
+        email: SUPER_ADMIN_INFO.email
+      };
+      onLoginSuccess(defaultSuperAdmin, `Welcome back! Authenticated with Admin privileges.`);
+    } else {
+      setCabinetLoginError('Authentication failed. Invalid Cabinet Official Mobile ID or Password.');
     }
-  };
-
-  // Submit Member Registration (Sign Up)
-  const handleMemberSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!memName.trim() || !memMobile.trim() || !memCity.trim()) {
-      alert('Please enter Name, Mobile Number, and City Name.');
-      return;
-    }
-
-    const newMem = {
-      fullName: memName.trim(),
-      mobileNumber: memMobile.trim(),
-      whatsappNumber: memMobile.trim(),
-      city: memCity.trim(),
-      district: memDistrict.trim() || memCity.trim(),
-      division: memCity.trim(),
-      province: 'Sindh',
-      country: 'Pakistan',
-      address: `District ${memCity.trim()}, Pakistan`,
-      profilePhoto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
-      notes: 'Registered via Digital Library Security Portal',
-      status: 'Active' as const
-    };
-
-    onRegisterMember(newMem);
-
-    const firstName = memName.trim().split(' ')[0] || memName.trim();
-
-    // Auto log in member
-    const memberCredential: AdminCredential = {
-      mobileNumber: memMobile.trim(),
-      password: 'memberPass123',
-      name: memName.trim(),
-      designation: 'ISO General Member',
-      role: 'Viewer',
-      isSuperAdmin: false,
-      createdDate: new Date().toISOString().split('T')[0]
-    };
-
-    // Open compulsory Google Registration Form in new tab
-    try {
-      window.open('https://forms.gle/7NiEiCtEr5BFsmkY8', '_blank');
-    } catch (err) {
-      console.error(err);
-    }
-
-    onLoginSuccess(
-      memberCredential,
-      `Welcome to ISO Central Repository, ${firstName}! Please complete your compulsory registration form at https://forms.gle/7NiEiCtEr5BFsmkY8.`
-    );
-  };
-
-  // Submit Member Sign In
-  const handleMemberSignInSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!memSignInName.trim() || !memSignInMobile.trim()) {
-      alert('Please enter your Name and Mobile Number.');
-      return;
-    }
-
-    const firstName = memSignInName.trim().split(' ')[0] || memSignInName.trim();
-
-    const memberCredential: AdminCredential = {
-      mobileNumber: memSignInMobile.trim(),
-      password: 'memberPass123',
-      name: memSignInName.trim(),
-      designation: 'ISO General Member',
-      role: 'Viewer',
-      isSuperAdmin: false,
-      createdDate: new Date().toISOString().split('T')[0]
-    };
-
-    onLoginSuccess(
-      memberCredential,
-      `Welcome back, ${firstName}! Member Sign In Successful.`
-    );
-  };
-
-  // Submit Official Registration
-  const handleOfficialSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!obName.trim() || !obMobile.trim() || !obCity.trim()) {
-      alert('Please enter Name, Mobile Number, and City Name.');
-      return;
-    }
-
-    const newOb = {
-      name: obName.trim(),
-      designation: obDesignation,
-      mobileNumber: obMobile.trim(),
-      whatsapp: obMobile.trim(),
-      city: obCity.trim(),
-      district: obCity.trim(),
-      division: obCity.trim(),
-      province: 'Sindh',
-      country: 'Pakistan',
-      profilePhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300',
-      notes: 'Appointed via Digital Library Portal',
-      status: 'Active' as const
-    };
-
-    onRegisterOfficeBearer(newOb);
-
-    const firstName = obName.trim().split(' ')[0] || obName.trim();
-
-    const officialCredential: AdminCredential = {
-      mobileNumber: obMobile.trim(),
-      password: 'officialPass123',
-      name: obName.trim(),
-      designation: obDesignation,
-      role: 'Manager',
-      isSuperAdmin: false,
-      createdDate: new Date().toISOString().split('T')[0]
-    };
-
-    onLoginSuccess(
-      officialCredential,
-      `Welcome back, ${firstName} (${obDesignation})! Cabinet Access Granted.`
-    );
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-4 overflow-y-auto">
-      <div className="max-w-xl w-full bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden my-auto relative">
-        
-        {/* Top Header Glow */}
-        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      
+      {/* Official In-App ISO OUTH FORM (حلف نامہ) for Newly Joined Member */}
+      {newMemberJoinedData && (
+        <OathFormModal
+          isOpen={true}
+          memberData={{
+            id: newMemberJoinedData.cred.memberId || `ISO-MEM-${Date.now().toString().slice(-4)}`,
+            fullName: newMemberJoinedData.cred.name,
+            email: newMemberJoinedData.cred.email || '',
+            mobileNumber: newMemberJoinedData.cred.mobileNumber,
+            city: regCity || 'Karachi',
+            district: regDistrict || regCity || 'Karachi'
+          }}
+          onCompleteOath={handleFinalizeMemberEntry}
+        />
+      )}
 
-        {/* Branding Header */}
-        <div className="p-6 text-center border-b border-slate-800 bg-slate-950/60 relative z-10">
+      {/* Main Container */}
+      <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden my-auto relative">
+        
+        {/* Header: Clean ISO Branding */}
+        <div className="p-5 text-center border-b border-slate-800 bg-slate-950/50">
           <img
             src={ISO_LOGO_URL}
             alt="ISO Logo"
-            className="w-16 h-16 rounded-full mx-auto ring-4 ring-emerald-500/40 shadow-xl object-cover mb-3"
+            className="w-14 h-14 rounded-full mx-auto ring-2 ring-emerald-500/50 shadow-lg object-cover mb-2"
           />
-          <h2 className="text-lg font-black text-white tracking-wide uppercase">
-            INTERNATIONAL SADAT ORGANIZATION
-          </h2>
-          <p className="text-xs text-emerald-400 font-bold mt-1">
-            Digital Library & Central Repository Security Gateway
+          <h1 className="text-sm sm:text-base font-black text-white tracking-wide uppercase">
+            International Sadat Organization
+          </h1>
+          <p className="text-xs text-emerald-400 font-semibold mt-0.5">
+            Digital Library & Central Repository
           </p>
-          <div className="inline-flex items-center gap-2 mt-3 px-3 py-1 bg-slate-800/80 border border-slate-700/80 rounded-full text-[11px] text-slate-300 font-mono">
-            <Lock className="w-3.5 h-3.5 text-amber-400" />
-            <span>Encrypted Authentication Gateway Active</span>
+          <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-[10px] font-semibold text-emerald-300">
+            <KeyRound className="w-3 h-3" />
+            <span>Email OTP Authentication (1 Email = 1 ID)</span>
           </div>
         </div>
 
-        {/* Portal Header */}
-        <div className="bg-slate-950/60 p-3.5 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-extrabold text-indigo-400">
-            <User className="w-4 h-4 text-indigo-400" />
-            <span>Member Self-Service Portal (Sign Up / Sign In)</span>
-          </div>
-          <span className="px-2.5 py-0.5 text-[10px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 rounded-full">
-            Member Access
-          </span>
-        </div>
-
-        {/* Form Body */}
-        <div className="p-6 relative z-10">
-
-          {/* 2. MEMBER SIGNUP / SIGN IN TAB */}
-          <div className="space-y-4">
-              {/* Member Auth Mode Switcher */}
-              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setMemberAuthMode('signup')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
-                    memberAuthMode === 'signup'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  New Member Sign Up
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMemberAuthMode('signin')}
-                  className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
-                    memberAuthMode === 'signin'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Member Sign In
-                </button>
+        {/* Dynamic Content: Admin Mode vs Member Mode */}
+        {activeGateTab === 'admin' ? (
+          /* ========================================================= */
+          /* ADMIN & CABINET LOGIN                                     */
+          /* ========================================================= */
+          <div className="p-5 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
+                <ShieldCheck className="w-4 h-4" />
+                <span>Administrator Login</span>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveGateTab('member');
+                  setAdminError('');
+                  setAdminSuccessMsg('');
+                }}
+                className="text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                ← Return to Member Portal
+              </button>
+            </div>
 
-              {memberAuthMode === 'signup' ? (
-                <form onSubmit={handleMemberSubmit} className="space-y-4">
-                  <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-300">
-                    <strong>New Member Registration:</strong> Register your account to receive your official membership card and access digital records.
+            {/* Admin Auth Method Selector */}
+            <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px] font-bold">
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminAuthMethod('emailOtp');
+                  setAdminError('');
+                }}
+                className={`py-1.5 rounded-lg transition-all ${
+                  adminAuthMethod === 'emailOtp'
+                    ? 'bg-amber-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Email OTP
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminAuthMethod('password');
+                  setAdminError('');
+                }}
+                className={`py-1.5 rounded-lg transition-all ${
+                  adminAuthMethod === 'password'
+                    ? 'bg-amber-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Mobile & Password
+              </button>
+            </div>
+
+            {adminError && (
+              <div className="p-3 bg-red-950/80 border border-red-500/40 text-red-200 text-xs rounded-xl flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{adminError}</span>
+              </div>
+            )}
+
+            {adminSuccessMsg && (
+              <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 text-xs rounded-xl flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{adminSuccessMsg}</span>
+              </div>
+            )}
+
+            {adminAuthMethod === 'emailOtp' ? (
+              /* Admin Option A: Registered Email OTP */
+              !adminOtpStep ? (
+                <form onSubmit={handleAdminSendOtp} className="space-y-3">
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Enter your registered administrator email address to receive an authentication OTP.
+                  </p>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Registered Admin Email <span className="text-red-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                      <input
+                        type="email"
+                        required
+                        placeholder="Enter registered administrator email"
+                        value={adminEmailInput}
+                        onChange={(e) => setAdminEmailInput(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
                   </div>
 
-                  {/* Compulsory Registration Google Form Card */}
-                  <div className="p-3.5 bg-amber-950/60 border border-amber-500/50 rounded-xl text-xs text-amber-200 space-y-1.5 shadow-md">
-                    <div className="flex items-center gap-2 font-bold text-amber-300">
-                      <ExternalLink className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>Compulsory Google Registration Form</span>
+                  <button
+                    type="submit"
+                    disabled={adminLoading}
+                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {adminLoading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <KeyRound className="w-4 h-4" />
+                    )}
+                    <span>Send Verification Code</span>
+                  </button>
+                </form>
+              ) : (
+                /* Admin OTP Verification Step */
+                <form onSubmit={handleAdminVerifyOtp} className="space-y-3.5">
+                  <div className="p-3.5 bg-amber-950/40 border border-amber-500/40 rounded-xl space-y-2.5">
+                    <div className="flex items-center justify-between text-xs text-amber-300 font-bold">
+                      <span className="flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Administrator Email Verification</span>
+                      </span>
+                      <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono">
+                        {adminMatchedAcc?.role || 'Admin'}
+                      </span>
                     </div>
-                    <p className="text-[11px] text-amber-200/90">
-                      Upon joining, new members are required to fill out the compulsory Google Form:
-                    </p>
-                    <a
-                      href="https://forms.gle/7NiEiCtEr5BFsmkY8"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-[11px] text-amber-300 hover:text-white underline font-bold"
-                    >
-                      <span>https://forms.gle/7NiEiCtEr5BFsmkY8</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+
+                    <div className="p-2.5 bg-slate-900/90 border border-amber-500/30 rounded-lg space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400">Admin Email:</span>
+                        <button
+                          type="button"
+                          onClick={() => { setAdminOtpStep(false); setShowAdminBackupCode(false); }}
+                          className="text-[11px] text-amber-300 hover:text-amber-200 font-bold underline cursor-pointer"
+                        >
+                          Change / Edit
+                        </button>
+                      </div>
+                      <p className="text-xs text-amber-300 font-mono font-bold truncate">
+                        {adminEmailInput}
+                      </p>
+                    </div>
+
+                    <div className="text-[11px] text-slate-300 space-y-1.5 leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/50">
+                      <p className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>Sender: <strong className="text-white font-mono">syedmuhammadamir837@gmail.com</strong></span>
+                      </p>
+                      <p className="text-amber-300 font-medium">
+                        ⚠️ اگر ای میل ان باکس میں نہ ملے تو برائے مہربانی اپنا <strong>Spam / Junk</strong> فولڈر لازمی چیک کریں۔<br />
+                        <span className="text-[10px] text-slate-300">(Please check both your <strong>Inbox</strong> and <strong>Spam / Junk</strong> folders)</span>
+                      </p>
+                      <div className="pt-1 flex items-center gap-2">
+                        <a
+                          href="https://mail.google.com"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white rounded text-[11px] font-semibold border border-slate-600 transition-colors"
+                        >
+                          <Mail className="w-3 h-3 text-amber-400" />
+                          <span>Open Gmail (جی میل کھولیں)</span>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Resend & Instant Backup Verification Code */}
+                  <div className="p-2.5 bg-slate-900/60 border border-slate-700/60 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <button
+                        type="button"
+                        disabled={adminResendTimer > 0 || adminLoading}
+                        onClick={handleResendAdminOtp}
+                        className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${adminLoading ? 'animate-spin' : ''}`} />
+                        <span>{adminResendTimer > 0 ? `Resend email in ${adminResendTimer}s` : 'Resend Code to Email'}</span>
+                      </button>
+
+                      {adminOfflineCode && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAdminBackupCode(!showAdminBackupCode)}
+                          className="text-xs text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer"
+                        >
+                          {showAdminBackupCode ? 'Hide Backup Code' : "Didn't receive email? Show Backup Code"}
+                        </button>
+                      )}
+                    </div>
+
+                    {showAdminBackupCode && adminOfflineCode && (
+                      <div className="pt-2 border-t border-slate-800 space-y-1.5">
+                        <div className="flex items-center justify-between bg-slate-950 px-3 py-2 rounded-lg border border-amber-500/40">
+                          <div>
+                            <span className="text-[10px] text-amber-300 font-bold block">Instant Backup Code:</span>
+                            <span className="text-[10px] text-slate-400">Issued to prevent blocking:</span>
+                          </div>
+                          <span className="font-mono text-lg font-black tracking-widest text-amber-300 bg-slate-900 px-2.5 py-0.5 rounded border border-amber-500/30">
+                            {adminOfflineCode}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 text-center">
+                          Enter this 6-digit code into the box below to log in as admin immediately.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Enter 6-Digit OTP Code <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      required
+                      placeholder="Enter 6-digit code"
+                      value={adminOtpCode}
+                      onChange={(e) => setAdminOtpCode(e.target.value.replace(/\D/g, ''))}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-center text-lg tracking-widest font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={adminLoading}
+                      className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {adminLoading ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4" />
+                      )}
+                      <span>Verify & Access Admin Panel</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminOtpStep(false)}
+                      className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </form>
+              )
+            ) : (
+              /* Admin Option B: Mobile & Password */
+              <form onSubmit={handleAdminPasswordSubmit} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Mobile User ID
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                    <input
+                      type="tel"
+                      required
+                      placeholder="Enter Mobile ID (e.g. 03001234567)"
+                      value={mobileInput}
+                      onChange={(e) => setMobileInput(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      placeholder="Enter Password"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-12 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-white text-xs px-1"
+                    >
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                >
+                  Log In as Administrator
+                </button>
+              </form>
+            )}
+
+            {/* Cabinet Login Option (Collapsed Below Admin Panel) */}
+            <div className="pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowCabinetOptionBelowAdmin(!showCabinetOptionBelowAdmin)}
+                className="w-full py-2 px-3 bg-slate-950/60 hover:bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400 hover:text-slate-200 flex items-center justify-between transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Official Cabinet Member Login</span>
+                </div>
+                {showCabinetOptionBelowAdmin ? (
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                )}
+              </button>
+
+              {showCabinetOptionBelowAdmin && (
+                <div className="mt-3 p-3 bg-slate-950/90 border border-slate-800 rounded-2xl space-y-3">
+                  {cabinetLoginError && (
+                    <div className="p-2.5 bg-red-950/80 border border-red-500/40 text-red-200 text-xs rounded-xl">
+                      {cabinetLoginError}
+                    </div>
+                  )}
+                  <form onSubmit={handleCabinetLoginSubmit} className="space-y-2.5">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Cabinet Mobile ID
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="e.g. 03001234567"
+                        value={cabinetMobileInput}
+                        onChange={(e) => setCabinetMobileInput(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Security Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showCabinetPassword ? 'text' : 'password'}
+                          required
+                          placeholder="Password"
+                          value={cabinetPasswordInput}
+                          onChange={(e) => setCabinetPasswordInput(e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCabinetPassword(!showCabinetPassword)}
+                          className="absolute right-2 top-2 text-slate-400 hover:text-white text-[11px]"
+                        >
+                          {showCabinetPassword ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-all cursor-pointer"
+                    >
+                      Log In to Cabinet
+                    </button>
+                  </form>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* ========================================================= */
+          /* MEMBER PORTAL (EMAIL OTP AUTHENTICATION & 1-TO-1 ID)      */
+          /* ========================================================= */
+          <div className="p-5 space-y-4">
+            
+            {/* 2 Simple Tabs: Sign In / Join */}
+            <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setMemberAuthMode('signin');
+                  setSignInError('');
+                  setSignInSuccessMsg('');
+                }}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  memberAuthMode === 'signin'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Member Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMemberAuthMode('signup');
+                  setRegError('');
+                  setRegSuccessMsg('');
+                }}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  memberAuthMode === 'signup'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Join as New Member
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {(signInError || regError) && (
+              <div className="p-3 bg-red-950/80 border border-red-500/40 text-red-200 text-xs rounded-xl flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{signInError || regError}</span>
+              </div>
+            )}
+
+            {/* Success Message */}
+            {(signInSuccessMsg || regSuccessMsg) && (
+              <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 text-xs rounded-xl flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{signInSuccessMsg || regSuccessMsg}</span>
+              </div>
+            )}
+
+            {memberAuthMode === 'signin' ? (
+              /* ======================================================= */
+              /* TAB A: MEMBER SIGN IN WITH EMAIL OTP                    */
+              /* ======================================================= */
+              !signInOtpStep ? (
+                /* Step 1: Input registered email or ID */
+                <form onSubmit={handleMemberSendOtp} className="space-y-3.5">
+                  <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-200 flex items-start gap-2">
+                    <Mail className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed">
+                      Enter your <span className="font-bold text-white">Registered Email</span> linked to your ISO Member ID. A 6-digit OTP will be dispatched to verify your identity.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Registered Email Address or Member ID <span className="text-red-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                      <input
+                        type="text"
+                        required
+                        placeholder="Enter registered email or Member ID"
+                        value={signInInput}
+                        onChange={(e) => setSignInInput(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={signInLoading}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {signInLoading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <KeyRound className="w-4 h-4" />
+                    )}
+                    <span>Send Verification Code (OTP)</span>
+                  </button>
+                </form>
+              ) : (
+                /* Step 2: Input 6-Digit OTP */
+                <form onSubmit={handleMemberVerifyOtp} className="space-y-3.5">
+                  <div className="p-3.5 bg-indigo-950/50 border border-indigo-500/40 rounded-xl space-y-2.5">
+                    <div className="text-xs font-bold text-white flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-indigo-300">
+                        <Mail className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>OTP Verification</span>
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono font-bold">
+                        {signInMatchedAccount?.id}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-200">
+                      Welcome, <strong>{signInMatchedAccount?.name}</strong>. A 6-digit verification code has been dispatched.
+                    </p>
+
+                    <div className="p-2.5 bg-slate-900/90 border border-indigo-500/30 rounded-lg space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400">Registered Email Address:</span>
+                        <button
+                          type="button"
+                          onClick={() => { setSignInOtpStep(false); setShowSignInBackupCode(false); }}
+                          className="text-[11px] text-amber-300 hover:text-amber-200 font-bold underline cursor-pointer"
+                        >
+                          Change / Edit
+                        </button>
+                      </div>
+                      <p className="text-xs text-indigo-300 font-mono font-bold truncate">
+                        {signInMatchedAccount?.email}
+                      </p>
+                    </div>
+
+                    <div className="text-[11px] text-slate-300 space-y-1.5 leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/50">
+                      <p className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>Sender: <strong className="text-white font-mono">syedmuhammadamir837@gmail.com</strong></span>
+                      </p>
+                      <p className="text-amber-300 font-medium">
+                        ⚠️ اگر ای میل ان باکس میں نہ ملے تو برائے مہربانی اپنا <strong>Spam / Junk</strong> فولڈر لازمی چیک کریں۔<br />
+                        <span className="text-[10px] text-slate-300">(Please check both your <strong>Inbox</strong> and <strong>Spam / Junk</strong> folders)</span>
+                      </p>
+                      <div className="pt-1 flex items-center gap-2">
+                        <a
+                          href="https://mail.google.com"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white rounded text-[11px] font-semibold border border-slate-600 transition-colors"
+                        >
+                          <Mail className="w-3 h-3 text-indigo-400" />
+                          <span>Open Gmail (جی میل کھولیں)</span>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Resend & Instant Backup Verification Code */}
+                  <div className="p-2.5 bg-slate-900/60 border border-slate-700/60 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <button
+                        type="button"
+                        disabled={signInResendTimer > 0 || signInLoading}
+                        onClick={handleResendSignInOtp}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold underline flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${signInLoading ? 'animate-spin' : ''}`} />
+                        <span>{signInResendTimer > 0 ? `Resend email in ${signInResendTimer}s` : 'Resend Code to Email'}</span>
+                      </button>
+
+                      {signInOfflineCode && (
+                        <button
+                          type="button"
+                          onClick={() => setShowSignInBackupCode(!showSignInBackupCode)}
+                          className="text-xs text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer"
+                        >
+                          {showSignInBackupCode ? 'Hide Backup Code' : "Didn't receive email? Show Backup Code"}
+                        </button>
+                      )}
+                    </div>
+
+                    {showSignInBackupCode && signInOfflineCode && (
+                      <div className="pt-2 border-t border-slate-800 space-y-1.5">
+                        <div className="flex items-center justify-between bg-slate-950 px-3 py-2 rounded-lg border border-amber-500/40">
+                          <div>
+                            <span className="text-[10px] text-amber-300 font-bold block">Instant Backup Code:</span>
+                            <span className="text-[10px] text-slate-400">Issued to prevent blocking:</span>
+                          </div>
+                          <span className="font-mono text-lg font-black tracking-widest text-amber-300 bg-slate-900 px-2.5 py-0.5 rounded border border-amber-500/30">
+                            {signInOfflineCode}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 text-center">
+                          Enter this 6-digit code into the box below to sign in immediately.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Enter 6-Digit Verification Code <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      required
+                      placeholder="Enter 6-digit code"
+                      value={signInOtpCode}
+                      onChange={(e) => setSignInOtpCode(e.target.value.replace(/\D/g, ''))}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-center text-xl tracking-widest font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={signInLoading}
+                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {signInLoading ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4" />
+                      )}
+                      <span>Verify & Sign In</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSignInOtpStep(false)}
+                      className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </form>
+              )
+            ) : (
+              /* ======================================================= */
+              /* TAB B: NEW MEMBER JOIN (1 EMAIL = 1 ID MANDATORY RULE) */
+              /* ======================================================= */
+              !regOtpStep ? (
+                /* Step 1: Fill form & Check 1 Email = 1 ID */
+                <form onSubmit={handleRegSendOtp} className="space-y-3">
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-200 flex items-start gap-2.5">
+                    <FileText className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5 leading-relaxed">
+                      <span className="font-bold text-amber-300">Strict Rule:</span>{' '}
+                      One email is permitted for only one ID. Your email will receive a verification code before ID issuance.
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
                       Full Name <span className="text-red-400">*</span>
                     </label>
                     <input
                       type="text"
                       required
                       placeholder="e.g. Syed Ali Raza Naqvi"
-                      value={memName}
-                      onChange={(e) => setMemName(e.target.value)}
+                      value={regName}
+                      onChange={(e) => setRegName(e.target.value)}
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-300">
+                        Email Address <span className="text-red-400">* (For OTP & ID Linking)</span>
+                      </label>
+                      {regEmail && !emailCheck.isUnique && (
+                        <span className="text-[10px] text-red-400 font-bold">
+                          Already in use by {emailCheck.conflictId}
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                      <input
+                        type="email"
+                        required
+                        placeholder="e.g. syedmuhammadamir911@gmail.com"
+                        value={regEmail}
+                        onChange={(e) => setRegEmail(e.target.value)}
+                        className={`w-full bg-slate-800 border rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 ${
+                          regEmail && !emailCheck.isUnique
+                            ? 'border-red-500 focus:ring-red-500'
+                            : 'border-slate-700 focus:ring-indigo-500'
+                        }`}
+                      />
+                    </div>
+                    {regEmail && suggestEmailCorrection(regEmail) && (
+                      <div className="mt-1.5 p-2 bg-amber-500/15 border border-amber-500/40 rounded-lg flex items-center justify-between gap-2">
+                        <div className="text-[11px] text-amber-300">
+                          <span>Did you mean: </span>
+                          <strong className="font-mono text-white underline">{suggestEmailCorrection(regEmail)}</strong>?
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setRegEmail(suggestEmailCorrection(regEmail)!)}
+                          className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] rounded cursor-pointer transition-colors"
+                        >
+                          Apply Fix
+                        </button>
+                      </div>
+                    )}
+                    {regEmail && !emailCheck.isUnique && (
+                      <p className="mt-1 text-[11px] text-red-400 leading-snug">
+                        ⚠️ One email is strictly reserved for one ID only. Please sign in with this email or enter another email address.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
                         Mobile Number <span className="text-red-400">*</span>
                       </label>
                       <input
                         type="tel"
                         required
-                        placeholder="e.g. 03001234567"
-                        value={memMobile}
-                        onChange={(e) => setMemMobile(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        placeholder="03001234567"
+                        value={regMobile}
+                        onChange={(e) => setRegMobile(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
                         City Name <span className="text-red-400">*</span>
                       </label>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. Karachi, Lahore"
-                        value={memCity}
-                        onChange={(e) => setMemCity(e.target.value)}
+                        placeholder="Karachi, Lahore, etc."
+                        value={regCity}
+                        onChange={(e) => setRegCity(e.target.value)}
                         className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">District / Region</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Central Karachi"
-                      value={memDistrict}
-                      onChange={(e) => setMemDistrict(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
                   <button
                     type="submit"
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all"
+                    disabled={regLoading || (Boolean(regEmail) && !emailCheck.isUnique)}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
                   >
-                    <UserCheck className="w-4 h-4" />
-                    <span>Sign Up & Enter Main Landing Page</span>
+                    {regLoading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <KeyRound className="w-4 h-4" />
+                    )}
+                    <span>Send Verification OTP & Verify Email</span>
                   </button>
                 </form>
               ) : (
-                <form onSubmit={handleMemberSignInSubmit} className="space-y-4">
-                  <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-300">
-                    <strong>Member Sign In:</strong> Enter your registered name and mobile number to log back into your member account.
+                /* Step 2: Verify OTP for New Member Registration */
+                <form onSubmit={handleRegVerifyOtpAndJoin} className="space-y-3.5">
+                  <div className="p-3.5 bg-indigo-950/50 border border-indigo-500/40 rounded-xl space-y-2.5">
+                    <div className="text-xs font-bold text-white flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-indigo-300">
+                        <Mail className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Verifying New Member Email</span>
+                      </span>
+                      <span className="text-[10px] text-indigo-300 font-bold bg-indigo-500/20 px-2 py-0.5 rounded">1 Email = 1 ID</span>
+                    </div>
+
+                    <p className="text-xs text-slate-200">
+                      Applicant: <strong>{regName}</strong> ({regCity})
+                    </p>
+
+                    <div className="p-2.5 bg-slate-900/90 border border-indigo-500/30 rounded-lg space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400">Destination Email Address:</span>
+                        <button
+                          type="button"
+                          onClick={() => { setRegOtpStep(false); setShowRegBackupCode(false); }}
+                          className="text-[11px] text-amber-300 hover:text-amber-200 font-bold underline cursor-pointer"
+                        >
+                          Change / Edit
+                        </button>
+                      </div>
+                      <p className="text-xs text-indigo-300 font-mono font-bold truncate">
+                        {regEmail}
+                      </p>
+                    </div>
+
+                    <div className="text-[11px] text-slate-300 space-y-1.5 leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/50">
+                      <p className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>Sender: <strong className="text-white font-mono">syedmuhammadamir837@gmail.com</strong></span>
+                      </p>
+                      <p className="text-amber-300 font-medium">
+                        ⚠️ اگر ای میل ان باکس میں نہ ملے تو برائے مہربانی اپنا <strong>Spam / Junk</strong> فولڈر لازمی چیک کریں۔<br />
+                        <span className="text-[10px] text-slate-300">(Please check both your <strong>Inbox</strong> and <strong>Spam / Junk</strong> folders)</span>
+                      </p>
+                      <div className="pt-1 flex items-center gap-2">
+                        <a
+                          href="https://mail.google.com"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white rounded text-[11px] font-semibold border border-slate-600 transition-colors"
+                        >
+                          <Mail className="w-3 h-3 text-indigo-400" />
+                          <span>Open Gmail (جی میل کھولیں)</span>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Resend & Instant Backup Verification Code */}
+                  <div className="p-2.5 bg-slate-900/60 border border-slate-700/60 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <button
+                        type="button"
+                        disabled={regResendTimer > 0 || regLoading}
+                        onClick={handleResendRegOtp}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold underline flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${regLoading ? 'animate-spin' : ''}`} />
+                        <span>{regResendTimer > 0 ? `Resend email in ${regResendTimer}s` : 'Resend Code to Email'}</span>
+                      </button>
+
+                      {regOfflineCode && (
+                        <button
+                          type="button"
+                          onClick={() => setShowRegBackupCode(!showRegBackupCode)}
+                          className="text-xs text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer"
+                        >
+                          {showRegBackupCode ? 'Hide Backup Code' : "Didn't receive email? Show Backup Code"}
+                        </button>
+                      )}
+                    </div>
+
+                    {showRegBackupCode && regOfflineCode && (
+                      <div className="pt-2 border-t border-slate-800 space-y-1.5">
+                        <div className="flex items-center justify-between bg-slate-950 px-3 py-2 rounded-lg border border-amber-500/40">
+                          <div>
+                            <span className="text-[10px] text-amber-300 font-bold block">Instant Backup Code:</span>
+                            <span className="text-[10px] text-slate-400">Issued to prevent blocking:</span>
+                          </div>
+                          <span className="font-mono text-lg font-black tracking-widest text-amber-300 bg-slate-900 px-2.5 py-0.5 rounded border border-amber-500/30">
+                            {regOfflineCode}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 text-center">
+                          Enter this 6-digit code into the box below to complete verification and join.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">
-                      Member Full Name <span className="text-red-400">*</span>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Enter 6-Digit Email Verification Code <span className="text-red-400">*</span>
                     </label>
                     <input
                       type="text"
+                      maxLength={6}
                       required
-                      placeholder="Enter Registered Full Name"
-                      value={memSignInName}
-                      onChange={(e) => setMemSignInName(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Enter 6-digit code"
+                      value={regOtpCode}
+                      onChange={(e) => setRegOtpCode(e.target.value.replace(/\D/g, ''))}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-center text-xl tracking-widest font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">
-                      Registered Mobile Number <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="tel"
-                      required
-                      placeholder="Enter Registered Mobile Number"
-                      value={memSignInMobile}
-                      onChange={(e) => setMemSignInMobile(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={regLoading}
+                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {regLoading ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4" />
+                      )}
+                      <span>Confirm & Issue Member ID</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegOtpStep(false)}
+                      className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    >
+                      Back
+                    </button>
                   </div>
-
-                  <button
-                    type="submit"
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all"
-                  >
-                    <UserCheck className="w-4 h-4" />
-                    <span>Sign In & Enter Main Landing Page</span>
-                  </button>
                 </form>
-              )}
-            </div>
+              )
+            )}
 
-            {/* Hidden Official Cabinet & Admin Login - Only opens when clicked below */}
-            <div className="mt-6 pt-4 border-t border-slate-800">
+            {/* Bottom: Subtle Link to Administrator Login */}
+            <div className="pt-3 border-t border-slate-800 text-center">
               <button
                 type="button"
-                onClick={() => setShowAdminCabinetPanel(!showAdminCabinetPanel)}
-                className="w-full py-2.5 px-4 bg-slate-950 hover:bg-slate-800/80 border border-slate-700/60 hover:border-amber-500/50 rounded-xl text-xs font-semibold text-slate-400 hover:text-amber-300 flex items-center justify-between transition-all cursor-pointer"
+                onClick={() => {
+                  setActiveGateTab('admin');
+                  setSignInError('');
+                  setRegError('');
+                }}
+                className="text-[11px] text-slate-500 hover:text-amber-400 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
               >
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-amber-400" />
-                  <span>Official Cabinet & Administrator Access</span>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full">
-                  {showAdminCabinetPanel ? 'Hide Option ▲' : 'Click to Open Option ▼'}
-                </span>
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Administrator & Official Cabinet Access</span>
               </button>
-
-              {showAdminCabinetPanel && (
-                <div className="mt-4 p-5 bg-slate-950/95 border-2 border-amber-500/60 rounded-2xl shadow-2xl space-y-4">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-amber-400" />
-                      <span className="text-xs font-black uppercase text-amber-300 tracking-wider">
-                        Authorized Credentials Required
-                      </span>
-                    </div>
-
-                    {/* Switcher between Admin Credential and Cabinet Official */}
-                    <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800 gap-1 text-[10px]">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAdminCabinetTab('admin');
-                          setLoginError('');
-                        }}
-                        className={`px-2.5 py-1 rounded-md font-bold transition-all ${
-                          adminCabinetTab === 'admin'
-                            ? 'bg-amber-600 text-white shadow-sm'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        Admin Credentials
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAdminCabinetTab('official');
-                          setLoginError('');
-                        }}
-                        className={`px-2.5 py-1 rounded-md font-bold transition-all ${
-                          adminCabinetTab === 'official'
-                            ? 'bg-emerald-600 text-white shadow-sm'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        Cabinet Official
-                      </button>
-                    </div>
-                  </div>
-
-                  {loginError && (
-                    <div className="p-3 bg-red-950/80 border border-red-500/40 text-red-200 text-xs rounded-xl flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                      <span>{loginError}</span>
-                    </div>
-                  )}
-
-                  {adminCabinetTab === 'admin' ? (
-                    <form onSubmit={handleAdminLoginSubmit} className="space-y-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          Admin Mobile Number (ID) <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          type="tel"
-                          required
-                          placeholder="e.g. 03323475431"
-                          value={mobileInput}
-                          onChange={(e) => setMobileInput(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          Admin Password <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••"
-                          value={passwordInput}
-                          onChange={(e) => setPasswordInput(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMobileInput('03323475431');
-                            setPasswordInput('admin123');
-                          }}
-                          className="text-[10px] text-amber-400/90 hover:text-amber-300 underline font-mono"
-                        >
-                          Auto-fill Default Super Admin (03323475431)
-                        </button>
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs rounded-xl shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                      >
-                        <ShieldCheck className="w-4 h-4" />
-                        <span>Log In to Admin Panel</span>
-                      </button>
-                    </form>
-                  ) : (
-                    <form onSubmit={handleOfficialSubmit} className="space-y-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          Official Full Name <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Syed Hassan Abbas Naqvi"
-                          value={obName}
-                          onChange={(e) => setObName(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                            Designation <span className="text-red-400">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="e.g. Central IT Secretary"
-                            value={obDesignation}
-                            onChange={(e) => setObDesignation(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                            Mobile Number <span className="text-red-400">*</span>
-                          </label>
-                          <input
-                            type="tel"
-                            required
-                            placeholder="e.g. 03009876543"
-                            value={obMobile}
-                            onChange={(e) => setObMobile(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          City Name <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Lahore"
-                          value={obCity}
-                          onChange={(e) => setObCity(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                      >
-                        <Building2 className="w-4 h-4" />
-                        <span>Authenticate Cabinet Official</span>
-                      </button>
-                    </form>
-                  )}
-                </div>
-              )}
             </div>
-
-        </div>
-
-        {/* Footer info */}
-        <div className="bg-slate-950/80 p-4 border-t border-slate-800 text-center text-[11px] text-slate-400 flex flex-col sm:flex-row justify-between items-center gap-2">
-          <span>Chairman IT Support: <strong>Syed M. Aamir Naqvi</strong></span>
-          <span className="text-emerald-400 font-semibold flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5" /> ISO Central Database Protected
-          </span>
-        </div>
-
+          </div>
+        )}
       </div>
     </div>
   );

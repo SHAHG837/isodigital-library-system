@@ -279,6 +279,7 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
         adminCredentials={adminCredentials}
         onGenerateCredential={onGenerateCredential}
         onDeleteCredential={onDeleteCredential}
+        officeBearers={officeBearers}
       />
 
       {/* MASTER DELETION & PURGE COMMAND CENTER */}

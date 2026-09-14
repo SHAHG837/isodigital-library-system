@@ -13,6 +13,8 @@ export interface Member {
   joiningDate: string;
   profilePhoto: string;
   notes?: string;
+  oathSubmitted?: boolean;
+  oathDate?: string;
   status: 'Approved' | 'Pending' | 'Rejected' | 'Active' | 'Inactive';
 }
 
@@ -187,6 +189,8 @@ export interface AdminCredential {
   isSuperAdmin: boolean;
   createdDate: string;
   profilePhoto?: string;
+  email?: string;
+  memberId?: string;
 }
 
 export interface RegistrationNotification {

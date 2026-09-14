@@ -16,7 +16,9 @@ import {
   Sparkles,
   QrCode,
   AlertCircle,
-  ShieldAlert
+  ShieldAlert,
+  FileText,
+  Clock
 } from 'lucide-react';
 import { Member, OfficeBearer, AdminCredential } from '../types';
 import { SUPER_ADMIN_INFO, INITIAL_DESIGNATIONS } from '../data/initialData';
@@ -48,6 +50,7 @@ export const PortalModal: React.FC<PortalModalProps> = ({
 
   // Member Registration State
   const [memName, setMemName] = useState('');
+  const [memEmail, setMemEmail] = useState('');
   const [memCity, setMemCity] = useState('');
   const [memMobile, setMemMobile] = useState('');
   const [memWhatsapp, setMemWhatsapp] = useState('');
@@ -75,6 +78,8 @@ export const PortalModal: React.FC<PortalModalProps> = ({
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const [showCabinetOptionBelowAdmin, setShowCabinetOptionBelowAdmin] = useState<boolean>(false);
 
+  const isSuperAdmin = Boolean(currentLoggedInUser?.isSuperAdmin || currentLoggedInUser?.role === 'SuperAdmin');
+
   if (!isOpen) return null;
 
   // Link copy helpers
@@ -95,6 +100,7 @@ export const PortalModal: React.FC<PortalModalProps> = ({
 
     const newMemData = {
       fullName: memName.trim(),
+      email: memEmail.trim().toLowerCase(),
       mobileNumber: memMobile.trim(),
       whatsappNumber: memWhatsapp.trim() || memMobile.trim(),
       city: memCity.trim(),
@@ -105,7 +111,9 @@ export const PortalModal: React.FC<PortalModalProps> = ({
       address: memAddress.trim(),
       profilePhoto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
       notes: memNotes.trim(),
-      status: 'Active' as const
+      oathSubmitted: true,
+      oathDate: new Date().toISOString(),
+      status: 'Pending' as const
     };
 
     onRegisterMember(newMemData);
@@ -224,6 +232,27 @@ export const PortalModal: React.FC<PortalModalProps> = ({
               <ShieldCheck className="w-4 h-4" />
               <span>Admin Panel Login</span>
             </button>
+
+            {/* Cabinet Official Tab - Only visible to Super Admin */}
+            {isSuperAdmin && (
+              <button
+                onClick={() => {
+                  setActivePortalTab('official');
+                  setObSubmitted(null);
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                  activePortalTab === 'official'
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                    : 'bg-slate-800/80 text-slate-400 hover:text-white'
+                }`}
+              >
+                <Building2 className="w-4 h-4 text-emerald-400" />
+                <span>Cabinet Official Portal</span>
+                <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded-full font-bold">
+                  Super Admin
+                </span>
+              </button>
+            )}
           </div>
 
           <button
@@ -292,6 +321,20 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                     </div>
                   </div>
 
+                  {/* Status: Pending Approval Notice */}
+                  <div className="p-3.5 bg-amber-950/60 border border-amber-500/60 rounded-xl text-xs text-amber-200 text-left max-w-sm mx-auto space-y-2">
+                    <div className="flex items-center gap-2 font-black text-amber-300">
+                      <Clock className="w-4 h-4 text-amber-400" />
+                      <span>Membership Status: Pending Approval (زیرِ منظوری)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed" dir="rtl">
+                      درخواست کامیابی سے موصول ہو گئی ہے۔ ایڈمن کی جانچ پڑتال اور منظوری کے بعد ہی آپ کا ممبرشپ کارڈ ڈاؤن لوڈ اور پرنٹ کے لیے دستیاب ہو گا۔
+                    </p>
+                    <p className="text-[10px] text-amber-300/80 font-mono">
+                      Card printing & download are locked until Super Admin approves your registration.
+                    </p>
+                  </div>
+
                   <div className="pt-2 flex justify-center gap-3">
                     <button
                       onClick={() => setMemSubmitted(null)}
@@ -320,6 +363,20 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                         placeholder="e.g. Syed Ali Raza Naqvi"
                         value={memName}
                         onChange={(e) => setMemName(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-300 mb-1">
+                        Email Address <span className="text-red-400">* (1 Email = 1 ID)</span>
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="e.g. user@gmail.com"
+                        value={memEmail}
+                        onChange={(e) => setMemEmail(e.target.value)}
                         className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
                     </div>
@@ -422,8 +479,9 @@ export const PortalModal: React.FC<PortalModalProps> = ({
             </div>
           )}
 
-          {/* 2. OFFICE BEARERS (CABINET OFFICIALS) REGISTRATION PORTAL */}
+          {/* 2. OFFICE BEARERS (CABINET OFFICIALS) REGISTRATION PORTAL - RESTRICTED TO SUPER ADMIN ONLY */}
           {activePortalTab === 'official' && (
+            isSuperAdmin ? (
             <div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
                 <div>
@@ -643,6 +701,15 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                 </form>
               )}
             </div>
+            ) : (
+              <div className="p-8 text-center bg-slate-950/60 border border-slate-800 rounded-2xl space-y-3">
+                <ShieldAlert className="w-10 h-10 text-amber-400 mx-auto" />
+                <h3 className="text-sm font-bold text-white">Super Admin Access Required</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  Cabinet Official portal and registration is restricted. Only the Super Administrator can view or manage Cabinet Official credentials.
+                </p>
+              </div>
+            )
           )}
 
           {/* 3. SUPER ADMIN / ADMIN CONTROL PANEL LOGIN */}
@@ -777,98 +844,100 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                     </div>
                   </form>
 
-                  {/* Official Cabinet Option - Hidden by default, opens only below admin panel when clicked */}
-                  <div className="pt-4 border-t border-slate-800">
-                    <button
-                      type="button"
-                      onClick={() => setShowCabinetOptionBelowAdmin(!showCabinetOptionBelowAdmin)}
-                      className="w-full py-2.5 px-3.5 bg-slate-950/80 hover:bg-slate-800 border border-slate-700/60 hover:border-emerald-500/40 rounded-xl text-xs font-semibold text-slate-400 hover:text-emerald-300 flex items-center justify-between transition-all cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-emerald-400" />
-                        <span>Official Cabinet Login & Registration</span>
-                      </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full">
-                        {showCabinetOptionBelowAdmin ? 'Hide Option ▲' : 'Click to Open Option ▼'}
-                      </span>
-                    </button>
-
-                    {showCabinetOptionBelowAdmin && (
-                      <div className="mt-4 p-4 bg-slate-950/90 border border-emerald-500/40 rounded-2xl space-y-4">
-                        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                          <span className="text-xs font-bold text-emerald-400">
-                            Cabinet Official Registration & Authentication
-                          </span>
+                  {/* Official Cabinet Option - Visible ONLY for Super Admin */}
+                  {isSuperAdmin && (
+                    <div className="pt-4 border-t border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => setShowCabinetOptionBelowAdmin(!showCabinetOptionBelowAdmin)}
+                        className="w-full py-2.5 px-3.5 bg-slate-950/80 hover:bg-slate-800 border border-slate-700/60 hover:border-emerald-500/40 rounded-xl text-xs font-semibold text-slate-400 hover:text-emerald-300 flex items-center justify-between transition-all cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-emerald-400" />
+                          <span>Official Cabinet Login & Registration (Super Admin Only)</span>
                         </div>
-                        <form onSubmit={handleOfficialSubmit} className="space-y-3">
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                              Official Full Name <span className="text-red-400">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              placeholder="e.g. Syed Hassan Abbas Naqvi"
-                              value={obName}
-                              onChange={(e) => setObName(e.target.value)}
-                              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            />
-                          </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full">
+                          {showCabinetOptionBelowAdmin ? 'Hide Option ▲' : 'Click to Open Option ▼'}
+                        </span>
+                      </button>
 
-                          <div className="grid grid-cols-2 gap-3">
+                      {showCabinetOptionBelowAdmin && (
+                        <div className="mt-4 p-4 bg-slate-950/90 border border-emerald-500/40 rounded-2xl space-y-4">
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                            <span className="text-xs font-bold text-emerald-400">
+                              Cabinet Official Registration & Authentication
+                            </span>
+                          </div>
+                          <form onSubmit={handleOfficialSubmit} className="space-y-3">
                             <div>
                               <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                                Designation <span className="text-red-400">*</span>
+                                Official Full Name <span className="text-red-400">*</span>
                               </label>
                               <input
                                 type="text"
                                 required
-                                placeholder="e.g. Central IT Secretary"
-                                value={obDesignation}
-                                onChange={(e) => setObDesignation(e.target.value)}
+                                placeholder="e.g. Syed Hassan Abbas Naqvi"
+                                value={obName}
+                                onChange={(e) => setObName(e.target.value)}
                                 className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                               />
                             </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                  Designation <span className="text-red-400">*</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. Central IT Secretary"
+                                  value={obDesignation}
+                                  onChange={(e) => setObDesignation(e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                  Mobile Number <span className="text-red-400">*</span>
+                                </label>
+                                <input
+                                  type="tel"
+                                  required
+                                  placeholder="e.g. 03009876543"
+                                  value={obMobile}
+                                  onChange={(e) => setObMobile(e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                />
+                              </div>
+                            </div>
+
                             <div>
                               <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                                Mobile Number <span className="text-red-400">*</span>
+                                City Name <span className="text-red-400">*</span>
                               </label>
                               <input
-                                type="tel"
+                                type="text"
                                 required
-                                placeholder="e.g. 03009876543"
-                                value={obMobile}
-                                onChange={(e) => setObMobile(e.target.value)}
-                                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                placeholder="e.g. Lahore"
+                                value={obCity}
+                                onChange={(e) => setObCity(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                               />
                             </div>
-                          </div>
 
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                              City Name <span className="text-red-400">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              placeholder="e.g. Lahore"
-                              value={obCity}
-                              onChange={(e) => setObCity(e.target.value)}
-                              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            />
-                          </div>
-
-                          <button
-                            type="submit"
-                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                          >
-                            <Building2 className="w-4 h-4" />
-                            <span>Authenticate Cabinet Official</span>
-                          </button>
-                        </form>
-                      </div>
-                    )}
-                  </div>
+                            <button
+                              type="submit"
+                              className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                            >
+                              <Building2 className="w-4 h-4" />
+                              <span>Authenticate Cabinet Official</span>
+                            </button>
+                          </form>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

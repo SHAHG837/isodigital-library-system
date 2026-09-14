@@ -55,7 +55,20 @@ export function App() {
   // Core Data States
   const [members, setMembers] = useState<Member[]>(() => {
     const saved = localStorage.getItem('iso_members');
-    return saved ? JSON.parse(saved) : INITIAL_MEMBERS;
+    if (saved) {
+      try {
+        const parsed: Member[] = JSON.parse(saved);
+        return parsed.map((m) => {
+          if (m.notes?.includes('Registered via Email OTP') && m.status === 'Active') {
+            return { ...m, status: 'Pending' as const };
+          }
+          return m;
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return INITIAL_MEMBERS;
   });
 
   const [superAdminPhoto, setSuperAdminPhoto] = useState<string>(() => {
@@ -513,11 +526,20 @@ export function App() {
   };
 
   const handleRegisterMemberFromPortal = (memberData: Omit<Member, 'id' | 'joiningDate' | 'status'>) => {
+    if (memberData.email) {
+      const normalizedEmail = memberData.email.trim().toLowerCase();
+      const existing = members.find((m) => m.email?.trim().toLowerCase() === normalizedEmail);
+      if (existing) {
+        alert(`This email is already registered with Member ID: ${existing.id} (${existing.fullName}). In accordance with ISO policy, one email is strictly reserved for one ID only.`);
+        return;
+      }
+    }
+
     const newMember: Member = {
       ...memberData,
       id: `ISO-MEM-${Date.now().toString().slice(-4)}`,
       joiningDate: new Date().toISOString().split('T')[0],
-      status: 'Active'
+      status: 'Pending'
     };
 
     setMembers((prev) => [newMember, ...prev]);
@@ -535,15 +557,8 @@ export function App() {
     };
 
     setRegistrationNotifications((prev) => [notif, ...prev]);
-    setShowCompulsoryFormModal(true);
 
-    try {
-      window.open('https://forms.gle/7NiEiCtEr5BFsmkY8', '_blank');
-    } catch (err) {
-      console.error(err);
-    }
-
-    logActivity('Member Self-Registration & Portal Login', `${newMember.fullName} registered/logged in from ${newMember.city} (Mobile: ${newMember.mobileNumber})`);
+    logActivity('Member Registration (Pending)', `${newMember.fullName} registered from ${newMember.city} (Card Status: Pending Approval)`);
   };
 
   const handleRegisterOfficeBearerFromPortal = (bearerData: Omit<OfficeBearer, 'id' | 'appointmentDate' | 'status'>) => {
@@ -593,6 +608,8 @@ export function App() {
     return (
       <AuthLoginGate
         adminCredentials={adminCredentials}
+        members={members}
+        admins={admins}
         onLoginSuccess={handleLoginSuccess}
         onRegisterMember={handleRegisterMemberFromPortal}
         onRegisterOfficeBearer={handleRegisterOfficeBearerFromPortal}
@@ -758,6 +775,10 @@ export function App() {
               members={members}
               officeBearers={officeBearers}
               currentLoggedInUser={currentLoggedInUser}
+              onUpdateMember={(updated) => {
+                setMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+                logActivity('Member Card Status Updated', `Updated status for ${updated.fullName} to ${updated.status}`);
+              }}
             />
           )}
 

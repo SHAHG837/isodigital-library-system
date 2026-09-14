@@ -9,9 +9,15 @@ interface MembershipCardModuleProps {
   members: Member[];
   officeBearers: OfficeBearer[];
   currentLoggedInUser?: AdminCredential | null;
+  onUpdateMember?: (updatedMember: Member) => void;
 }
 
-export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ members, officeBearers, currentLoggedInUser }) => {
+export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
+  members,
+  officeBearers,
+  currentLoggedInUser,
+  onUpdateMember
+}) => {
   const isSuperAdmin = currentLoggedInUser?.isSuperAdmin || currentLoggedInUser?.role === 'SuperAdmin';
   const isAdminOrManager = isSuperAdmin || currentLoggedInUser?.role === 'Admin' || currentLoggedInUser?.role === 'Manager';
   const isRegularMember = Boolean(currentLoggedInUser && !isAdminOrManager);
@@ -22,17 +28,32 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ memb
     (currentLoggedInUser?.name && m.fullName.toLowerCase() === currentLoggedInUser.name.toLowerCase())
   );
 
-  const [selectedType, setSelectedType] = useState<'Member' | 'OfficeBearer'>('Member');
-  const [selectedId, setSelectedId] = useState<string>(myMemberRecord?.id || members[0]?.id || '');
+  // Find user's office bearer record
+  const myOfficeBearerRecord = officeBearers.find((o) =>
+    (currentLoggedInUser?.mobileNumber && o.mobileNumber === currentLoggedInUser.mobileNumber) ||
+    (currentLoggedInUser?.name && o.name.toLowerCase() === currentLoggedInUser.name.toLowerCase())
+  );
+
+  const [selectedType, setSelectedType] = useState<'Member' | 'OfficeBearer'>(
+    myMemberRecord ? 'Member' : (myOfficeBearerRecord ? 'OfficeBearer' : 'Member')
+  );
+  const [selectedId, setSelectedId] = useState<string>(
+    myMemberRecord?.id || myOfficeBearerRecord?.id || members[0]?.id || ''
+  );
   const [cardLayoutFormat, setCardLayoutFormat] = useState<'cnic' | 'badge'>('cnic');
   const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
-    if (isRegularMember && myMemberRecord) {
-      setSelectedType('Member');
-      setSelectedId(myMemberRecord.id);
+    if (isRegularMember) {
+      if (myOfficeBearerRecord && !myMemberRecord) {
+        setSelectedType('OfficeBearer');
+        setSelectedId(myOfficeBearerRecord.id);
+      } else if (myMemberRecord) {
+        setSelectedType('Member');
+        setSelectedId(myMemberRecord.id);
+      }
     }
-  }, [isRegularMember, myMemberRecord]);
+  }, [isRegularMember, myMemberRecord, myOfficeBearerRecord]);
 
   const activePerson =
     selectedType === 'Member'
@@ -78,23 +99,122 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ memb
   const isApproved =
     selectedType === 'OfficeBearer' ||
     (activePerson && 'status' in activePerson
-      ? activePerson.status === 'Approved' || activePerson.status === 'Active'
-      : true);
+      ? activePerson.status === 'Approved' || (activePerson.status === 'Active' && !activePerson.notes?.includes('Registered via Email OTP'))
+      : false);
+
+  const PendingWatermarkOverlay = () => (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        backgroundColor: 'rgba(15, 23, 42, 0.65)',
+        backdropFilter: 'blur(1.5px)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 40,
+        borderRadius: '14px',
+        pointerEvents: 'none'
+      }}
+    >
+      <div
+        style={{
+          transform: 'rotate(-20deg)',
+          backgroundColor: '#b45309',
+          color: '#ffffff',
+          padding: '8px 22px',
+          borderRadius: '10px',
+          fontWeight: '900',
+          fontSize: '12px',
+          letterSpacing: '1.5px',
+          boxShadow: '0 10px 25px rgba(0, 0, 0, 0.7)',
+          border: '2px solid #fef3c7',
+          textAlign: 'center',
+          textTransform: 'uppercase',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '2px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>⏳</span>
+          <span>APPROVAL PENDING</span>
+        </div>
+        <div style={{ fontSize: '10px', fontWeight: 'bold', letterSpacing: '0px', color: '#fef08a' }} dir="rtl">
+          کارڈ زیرِ منظوری ہے — ڈاؤن لوڈ و پرنٹ معطل
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
       {!isApproved && (
         <div className="bg-amber-950/90 border-2 border-amber-500/80 text-amber-100 p-4 rounded-2xl flex items-start gap-3 shadow-xl">
           <ShieldAlert className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <h4 className="font-extrabold text-sm text-amber-300 uppercase tracking-wide flex items-center gap-2">
-              <span>Card Download Restricted — Status: {activePerson && 'status' in activePerson ? activePerson.status : 'Pending Approval'}</span>
-            </h4>
-            <p className="text-xs text-amber-200">
-              {activePerson && 'status' in activePerson && activePerson.status === 'Rejected'
-                ? 'Your member registration was REJECTED by Super Admin. Card generation is disabled.'
-                : 'Your member registration is currently PENDING Super Admin approval. Members can download & print their card once Syed Muhammad Aamir Naqvi Al Bukhari (Super Admin) approves their registration status in the Member Directory.'}
+          <div className="space-y-1.5 flex-1">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h4 className="font-extrabold text-sm text-amber-300 uppercase tracking-wide flex items-center gap-2">
+                <span>کارڈ ڈاؤن لوڈ اور پرنٹ معطل ہے — اسٹیٹس: {activePerson && 'status' in activePerson ? activePerson.status : 'Pending'}</span>
+              </h4>
+              <span className="px-2.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full text-[10px] font-bold uppercase font-mono">
+                {activePerson && 'status' in activePerson ? activePerson.status : 'Pending'}
+              </span>
+            </div>
+            <p className="text-xs text-amber-200 leading-relaxed" dir="rtl">
+              محترم <strong>{personName}</strong>! آپ کا ممبرشپ کارڈ ایڈمن (سید محمد عامر نقوی البخاری) کی جانچ پڑتال اور باقاعدہ منظوری کے لیے <strong>زیرِ التواء (Pending)</strong> ہے۔ ایڈمن کی منظوری کے بعد ہی اصل کارڈ کا ڈاؤن لوڈ اور پرنٹ ممکن ہوگا۔
             </p>
+            <p className="text-[11px] text-amber-300/80">
+              Card download and high-resolution printing are strictly locked until Super Admin approves your membership.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Approval Quick Bar */}
+      {isAdminOrManager && activePerson && 'status' in activePerson && activePerson.status !== 'Approved' && (
+        <div className="bg-slate-900 border-2 border-emerald-500/80 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>Super Admin Card Approval Control</span>
+                <span className="text-amber-400 font-mono text-[10px] uppercase">({activePerson.status})</span>
+              </h4>
+              <p className="text-[11px] text-slate-300">
+                You are logged in as Admin. You can review this member ({personName}) and approve their card instantly:
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => {
+                if (onUpdateMember && 'status' in activePerson) {
+                  onUpdateMember({ ...activePerson, status: 'Approved' });
+                }
+              }}
+              className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Approve Card (کارڈ منظور کریں)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (onUpdateMember && 'status' in activePerson) {
+                  onUpdateMember({ ...activePerson, status: 'Rejected' });
+                }
+              }}
+              className="px-3 py-2 bg-red-600/80 hover:bg-red-600 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+            >
+              Reject
+            </button>
           </div>
         </div>
       )}
@@ -149,22 +269,42 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ memb
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
         <div>
           <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Card Holder Category</label>
-          <select
-            disabled={isRegularMember}
-            value={selectedType}
-            onChange={(e: any) => {
-              setSelectedType(e.target.value);
-              if (e.target.value === 'Member') {
-                setSelectedId(members[0]?.id || '');
-              } else {
-                setSelectedId(officeBearers[0]?.id || '');
-              }
-            }}
-            className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-slate-100 font-bold disabled:opacity-75"
-          >
-            <option value="Member">ISO General Member</option>
-            {!isRegularMember && <option value="OfficeBearer">ISO Office Bearer</option>}
-          </select>
+          {isRegularMember ? (
+            <select
+              value={selectedType}
+              onChange={(e: any) => {
+                const val = e.target.value;
+                setSelectedType(val);
+                if (val === 'Member' && myMemberRecord) {
+                  setSelectedId(myMemberRecord.id);
+                } else if (val === 'OfficeBearer' && myOfficeBearerRecord) {
+                  setSelectedId(myOfficeBearerRecord.id);
+                }
+              }}
+              disabled={!(myMemberRecord && myOfficeBearerRecord)}
+              className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-slate-100 font-bold disabled:opacity-75"
+            >
+              {myMemberRecord && <option value="Member">General Membership Card</option>}
+              {myOfficeBearerRecord && <option value="OfficeBearer">Official Executive / Bearer Card</option>}
+              {!myMemberRecord && !myOfficeBearerRecord && <option value="Member">General Membership Card</option>}
+            </select>
+          ) : (
+            <select
+              value={selectedType}
+              onChange={(e: any) => {
+                setSelectedType(e.target.value);
+                if (e.target.value === 'Member') {
+                  setSelectedId(members[0]?.id || '');
+                } else {
+                  setSelectedId(officeBearers[0]?.id || '');
+                }
+              }}
+              className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-slate-100 font-bold"
+            >
+              <option value="Member">ISO General Member</option>
+              <option value="OfficeBearer">ISO Office Bearer</option>
+            </select>
+          )}
         </div>
 
         <div>
@@ -176,10 +316,12 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ memb
             className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-slate-100 font-bold disabled:opacity-75"
           >
             {isRegularMember ? (
-              myMemberRecord ? (
+              selectedType === 'OfficeBearer' && myOfficeBearerRecord ? (
+                <option value={myOfficeBearerRecord.id}>{myOfficeBearerRecord.name} - {myOfficeBearerRecord.designation} (My Card)</option>
+              ) : myMemberRecord ? (
                 <option value={myMemberRecord.id}>{myMemberRecord.fullName} ({myMemberRecord.id}) - My Card</option>
               ) : (
-                <option value="">No Member Record Found</option>
+                <option value="">No Card Found</option>
               )
             ) : selectedType === 'Member' ? (
               members.map((m) => (
@@ -391,6 +533,8 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ memb
                     <span style={{ display: 'block', fontSize: '6px', color: '#6ee7b7' }}>Holder Signature</span>
                   </div>
                 </div>
+
+                {!isApproved && <PendingWatermarkOverlay />}
               </div>
 
               {/* CNIC BACK SIDE */}
@@ -469,6 +613,8 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ memb
                   <span>Property of ISO. Drop in post box if found.</span>
                   <span style={{ color: '#10b981', fontWeight: 'bold' }}>Contact: 03323475431</span>
                 </div>
+
+                {!isApproved && <PendingWatermarkOverlay />}
               </div>
             </>
           ) : (
@@ -513,6 +659,8 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ memb
                   <div>District: <strong>{personDistrict}, {personProvince}</strong></div>
                   <div>Contact: <strong>{personPhone}</strong></div>
                 </div>
+
+                {!isApproved && <PendingWatermarkOverlay />}
               </div>
 
               {/* Badge Back */}
@@ -550,6 +698,8 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({ memb
                   Auth: Syed M. Aamir Naqvi Al Bukhari<br />
                   Chairman IT Support Council (03323475431)
                 </div>
+
+                {!isApproved && <PendingWatermarkOverlay />}
               </div>
             </>
           )}

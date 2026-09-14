@@ -25,7 +25,8 @@ import {
   UserCheck,
   Sparkles,
   ExternalLink,
-  FileText
+  FileText,
+  Clock
 } from 'lucide-react';
 import { exportToExcel, exportToCSV, exportToJSON, printElement, printMemberDirectoryTable } from '../utils/exportImport';
 
@@ -142,6 +143,20 @@ export const MembersModule: React.FC<MembersModuleProps> = ({
     e.preventDefault();
     if (!formData.fullName || !formData.mobileNumber) return;
 
+    // Enforce "One email is for one ID" rule
+    if (formData.email && formData.email.trim()) {
+      const normalizedEmail = formData.email.trim().toLowerCase();
+      const duplicate = members.find(
+        (m) => m.id !== editingMember?.id && m.email?.trim().toLowerCase() === normalizedEmail
+      );
+      if (duplicate) {
+        alert(
+          `One Email for One ID Rule: This email (${formData.email}) is already assigned to Member ID ${duplicate.id} (${duplicate.fullName}). In accordance with ISO policy, one email is strictly reserved for one ID only.`
+        );
+        return;
+      }
+    }
+
     if (editingMember) {
       onEditMember({
         ...editingMember,
@@ -185,38 +200,40 @@ export const MembersModule: React.FC<MembersModuleProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Compulsory Registration Form Banner */}
-      <div className="bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 p-4.5 rounded-2xl border-2 border-amber-500/80 text-xs text-amber-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
-        <div className="flex items-start gap-3">
-          <div className="p-2.5 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-xl shrink-0 mt-0.5 shadow-md">
-            <FileText className="w-5 h-5" />
-          </div>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/40">
-                Compulsory Requirement
-              </span>
-              <span className="text-xs text-amber-200/90 font-bold">Official Membership Form</span>
+      {/* Pending Membership Approvals Bar for Super Admin / Managers */}
+      {isAdminOrManager && members.some(m => m.status === 'Pending') && (
+        <div className="bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 p-4.5 rounded-2xl border-2 border-amber-500/80 text-xs text-amber-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-xl shrink-0 mt-0.5 shadow-md">
+              <Clock className="w-5 h-5 animate-pulse" />
             </div>
-            <p className="font-extrabold text-amber-100 text-sm">
-              All joined members must fill out the official Google Registration Form:
-            </p>
-            <p className="text-amber-200/80 font-mono text-[11px] break-all">
-              Link: <a href="https://forms.gle/7NiEiCtEr5BFsmkY8" target="_blank" rel="noopener noreferrer" className="underline font-bold text-amber-300 hover:text-white">https://forms.gle/7NiEiCtEr5BFsmkY8</a>
-            </p>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/40 font-mono">
+                  Pending Approvals Required
+                </span>
+                <span className="text-xs text-amber-200/90 font-bold">
+                  {members.filter(m => m.status === 'Pending').length} Member(s) Waiting for Card Approval
+                </span>
+              </div>
+              <p className="font-extrabold text-amber-100 text-sm" dir="rtl">
+                نئے رجسٹرڈ ممبران کے ممبرشپ کارڈز اس وقت پینڈنگ ہیں۔ ایڈمن کی منظوری کے بعد ہی وہ کارڈ ڈاؤن لوڈ اور پرنٹ کر سکیں گے۔
+              </p>
+              <p className="text-amber-200/80 text-[11px]">
+                Click "View Pending Members" or click "Approve" directly on any pending member row below to unlock their card.
+              </p>
+            </div>
           </div>
-        </div>
 
-        <a
-          href="https://forms.gle/7NiEiCtEr5BFsmkY8"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2 transition-all shrink-0 uppercase tracking-wider"
-        >
-          <span>Fill Google Form</span>
-          <ExternalLink className="w-4 h-4" />
-        </a>
-      </div>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('Pending')}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2 transition-all shrink-0 uppercase tracking-wider cursor-pointer"
+          >
+            <span>View Pending Members ({members.filter(m => m.status === 'Pending').length})</span>
+          </button>
+        </div>
+      )}
 
       {/* General Member Security Notice Banner */}
       {isRegularMember && (
@@ -511,7 +528,7 @@ export const MembersModule: React.FC<MembersModuleProps> = ({
                               : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
                           }`}
                         >
-                          {member.status === 'Approved' || member.status === 'Active'
+                          {member.status === 'Approved' || (member.status === 'Active' && !member.notes?.includes('Registered via Email OTP'))
                             ? '✓ Approved'
                             : member.status === 'Rejected'
                             ? '✕ Rejected'
@@ -520,12 +537,12 @@ export const MembersModule: React.FC<MembersModuleProps> = ({
 
                         {isAdminOrManager && (
                           <div className="flex flex-wrap items-center gap-1 pt-0.5 no-print">
-                            {member.status !== 'Approved' && member.status !== 'Active' && (
+                            {member.status !== 'Approved' && (
                               <button
                                 type="button"
                                 onClick={() => onEditMember({ ...member, status: 'Approved' })}
                                 className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[9px] rounded-lg transition-all shadow-sm flex items-center gap-0.5"
-                                title="Approve Member Registration"
+                                title="Approve Member Registration & Unlock Card"
                               >
                                 Approve
                               </button>

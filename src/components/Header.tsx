@@ -165,10 +165,22 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => onOpenPortal('member')}
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all scale-100 hover:scale-105"
-            title="Open Member & Cabinet Self-Service Registration Portals"
+            title="Open Member & Self-Service Registration Portals"
           >
             <Globe className="w-3.5 h-3.5" />
             <span>Portals & Login</span>
+          </button>
+        )}
+
+        {/* Cabinet Official Portal Launcher - Shown ONLY for Super Admin inside portal */}
+        {isSuperAdmin && onOpenPortal && (
+          <button
+            onClick={() => onOpenPortal('official')}
+            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-bold text-xs rounded-xl shadow-md transition-all scale-100 hover:scale-105 cursor-pointer"
+            title="Cabinet Official Portal (Super Admin Exclusive)"
+          >
+            <Building2 className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Cabinet Official</span>
           </button>
         )}
 
@@ -368,15 +380,28 @@ export const Header: React.FC<HeaderProps> = ({
 
               <div className="pt-2 border-t border-slate-800 space-y-2">
                 {!isRegularMember ? (
-                  <button
-                    onClick={() => {
-                      if (setActiveTab) setActiveTab('superAdmin');
-                      setShowUserModal(false);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors shadow-lg shadow-indigo-500/20"
-                  >
-                    <Shield className="w-4 h-4" /> Super Admin Control Panel
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        if (setActiveTab) setActiveTab('superAdmin');
+                        setShowUserModal(false);
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors shadow-lg shadow-indigo-500/20"
+                    >
+                      <Shield className="w-4 h-4" /> Super Admin Control Panel
+                    </button>
+                    {isSuperAdmin && onOpenPortal && (
+                      <button
+                        onClick={() => {
+                          setShowUserModal(false);
+                          onOpenPortal('official');
+                        }}
+                        className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-emerald-300 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 rounded-xl transition-colors"
+                      >
+                        <Building2 className="w-4 h-4 text-emerald-400" /> Cabinet Official Portal
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <button
                     onClick={() => {

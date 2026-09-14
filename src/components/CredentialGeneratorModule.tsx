@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AdminCredential } from '../types';
+import { AdminCredential, OfficeBearer } from '../types';
 import {
   KeyRound,
   ShieldCheck,
@@ -14,20 +14,25 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  Building2,
+  UserCheck
 } from 'lucide-react';
 
 interface CredentialGeneratorModuleProps {
   adminCredentials: AdminCredential[];
   onGenerateCredential: (cred: AdminCredential) => void;
   onDeleteCredential: (mobileNumber: string) => void;
+  officeBearers?: OfficeBearer[];
 }
 
 export const CredentialGeneratorModule: React.FC<CredentialGeneratorModuleProps> = ({
   adminCredentials,
   onGenerateCredential,
-  onDeleteCredential
+  onDeleteCredential,
+  officeBearers = []
 }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'all' | 'cabinetOfficials'>('all');
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -305,57 +310,193 @@ export const CredentialGeneratorModule: React.FC<CredentialGeneratorModuleProps>
 
       </div>
 
-      {/* 3. ACTIVE GENERATED MOBILE CREDENTIALS TABLE */}
+      {/* 3. SUB-TABS: GENERAL CREDENTIALS VS CABINET OFFICIAL PORTAL CREDENTIALS */}
       <div className="pt-2">
-        <h3 className="text-sm font-bold text-white mb-3 flex items-center justify-between">
-          <span>Active Issued Mobile ID Credentials ({adminCredentials.length})</span>
-          <span className="text-xs text-slate-400 font-normal">Stored in local secure database</span>
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-2 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeSubTab === 'all'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                  : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>All Issued Mobile Credentials ({adminCredentials.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('cabinetOfficials')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeSubTab === 'cabinetOfficials'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Cabinet Official Credentials ({officeBearers.length})</span>
+            </button>
+          </div>
+          <span className="text-[11px] text-slate-400 font-medium">
+            Super Admin Exclusive Portal Privilege
+          </span>
+        </div>
 
-        <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-800">
-          {adminCredentials.map((cred) => (
-            <div key={cred.mobileNumber} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-800/40 transition-colors">
-              <div className="flex items-center gap-3">
-                <div className={`p-2.5 rounded-xl text-white ${cred.isSuperAdmin ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' : 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'}`}>
-                  <Phone className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white font-mono">{cred.mobileNumber}</span>
-                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
-                      cred.isSuperAdmin ? 'bg-amber-500/20 text-amber-300' : 'bg-indigo-500/20 text-indigo-300'
-                    }`}>
-                      {cred.role}
-                    </span>
+        {/* 3A. ALL ISSUED MOBILE CREDENTIALS TABLE */}
+        {activeSubTab === 'all' && (
+          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-800">
+            {adminCredentials.map((cred) => (
+              <div key={cred.mobileNumber} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-800/40 transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl text-white ${cred.isSuperAdmin ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' : 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'}`}>
+                    <Phone className="w-4 h-4" />
                   </div>
-                  <p className="text-xs text-slate-300 mt-0.5">{cred.name} • <span className="text-slate-400">{cred.designation}</span></p>
-                  <p className="text-[10px] text-slate-500 font-mono mt-0.5">Password: <span className="text-slate-300">{cred.password}</span></p>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-white font-mono">{cred.mobileNumber}</span>
+                      <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
+                        cred.isSuperAdmin ? 'bg-amber-500/20 text-amber-300' : 'bg-indigo-500/20 text-indigo-300'
+                      }`}>
+                        {cred.role}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-0.5">{cred.name} • <span className="text-slate-400">{cred.designation}</span></p>
+                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">Password: <span className="text-slate-300">{cred.password}</span></p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    onClick={() => handleCopyCredential(cred)}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors"
+                    title="Copy Login Info to Clipboard"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedMobile === cred.mobileNumber ? 'Copied!' : 'Copy'}</span>
+                  </button>
+
+                  {!cred.isSuperAdmin && (
+                    <button
+                      onClick={() => onDeleteCredential(cred.mobileNumber)}
+                      className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-xs transition-colors"
+                      title="Revoke Mobile ID Credential"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
+            ))}
+          </div>
+        )}
 
-              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                <button
-                  onClick={() => handleCopyCredential(cred)}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors"
-                  title="Copy Login Info to Clipboard"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>{copiedMobile === cred.mobileNumber ? 'Copied!' : 'Copy'}</span>
-                </button>
-
-                {!cred.isSuperAdmin && (
-                  <button
-                    onClick={() => onDeleteCredential(cred.mobileNumber)}
-                    className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-xs transition-colors"
-                    title="Revoke Mobile ID Credential"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
+        {/* 3B. CABINET OFFICIAL EXCLUSIVE PORTAL CREDENTIALS */}
+        {activeSubTab === 'cabinetOfficials' && (
+          <div className="space-y-3">
+            <div className="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-2xl flex items-center justify-between gap-3 text-xs text-emerald-300">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>
+                  Cabinet Official portal login credentials are strictly managed by the Super Admin inside this portal.
+                </span>
               </div>
             </div>
-          ))}
-        </div>
+
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-800">
+              {officeBearers.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  No Cabinet Officials currently registered in the database.
+                </div>
+              ) : (
+                officeBearers.map((official) => {
+                  const existingCred = adminCredentials.find(
+                    (c) => c.mobileNumber === official.contactNumber || c.name.toLowerCase() === official.name.toLowerCase()
+                  );
+
+                  return (
+                    <div
+                      key={official.id}
+                      className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-slate-800/40 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={official.profilePhoto || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
+                          alt={official.name}
+                          className="w-10 h-10 rounded-xl object-cover ring-2 ring-emerald-500/40 shrink-0"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white">{official.name}</span>
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              {official.tier || 'Cabinet Official'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-emerald-400 font-semibold mt-0.5">
+                            {official.designation}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400 mt-1 font-mono">
+                            <span>Phone: {official.contactNumber}</span>
+                            {existingCred && (
+                              <span className="text-amber-400 font-bold">
+                                Password: {existingCred.password}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                        {existingCred ? (
+                          <>
+                            <button
+                              onClick={() => handleCopyCredential(existingCred)}
+                              className="px-3 py-1.5 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                              title="Copy Cabinet Official Credentials"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>{copiedMobile === existingCred.mobileNumber ? 'Copied!' : 'Copy Credential'}</span>
+                            </button>
+                            <button
+                              onClick={() => onDeleteCredential(existingCred.mobileNumber)}
+                              className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-xs transition-colors"
+                              title="Revoke Official's Login"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              const autoPass = 'cab' + Math.floor(100000 + Math.random() * 900000);
+                              const newCred: AdminCredential = {
+                                mobileNumber: official.contactNumber,
+                                password: autoPass,
+                                name: official.name,
+                                designation: official.designation,
+                                role: 'Admin',
+                                isSuperAdmin: false,
+                                createdDate: new Date().toISOString().split('T')[0]
+                              };
+                              onGenerateCredential(newCred);
+                              setSuccessMessage(`Cabinet Official login created for ${official.name}!`);
+                              setTimeout(() => setSuccessMessage(''), 3500);
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Issue Portal Login</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
     </div>
