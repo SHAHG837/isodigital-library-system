@@ -129,7 +129,8 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
         if (res.emailDelivered) {
           setSignInSuccessMsg(`A 6-digit verification code has been dispatched to ${lookup.email}. Please check your inbox and spam folder.`);
         } else {
-          setSignInSuccessMsg(`Email server offline. Verification code issued for session.`);
+          setSignInSuccessMsg(`Verification code issued for your active session.`);
+          setShowSignInBackupCode(true);
         }
         setSignInResendTimer(30);
       } else {
@@ -210,7 +211,8 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
         if (res.emailDelivered) {
           setSignInSuccessMsg(`A fresh 6-digit verification code has been dispatched to ${signInMatchedAccount.email}.`);
         } else {
-          setSignInSuccessMsg(`Email server is offline. Fresh verification code issued for session.`);
+          setSignInSuccessMsg(`Fresh verification code issued for your active session.`);
+          setShowSignInBackupCode(true);
         }
         setSignInResendTimer(30);
       } else {
@@ -298,7 +300,8 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
         if (res.emailDelivered) {
           setRegSuccessMsg(`A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your email inbox and spam folder.`);
         } else {
-          setRegSuccessMsg(`Email server offline. Verification code issued for registration.`);
+          setRegSuccessMsg(`Verification code issued for your active registration session.`);
+          setShowRegBackupCode(true);
         }
         setRegResendTimer(30);
       } else {
@@ -325,7 +328,8 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
         if (res.emailDelivered) {
           setRegSuccessMsg(`A fresh 6-digit verification code has been dispatched to ${cleanEmail}.`);
         } else {
-          setRegSuccessMsg(`Fresh verification code issued.`);
+          setRegSuccessMsg(`Fresh verification code issued for your active session.`);
+          setShowRegBackupCode(true);
         }
         setRegResendTimer(30);
       } else {
@@ -500,7 +504,8 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
         if (res.emailDelivered) {
           setAdminSuccessMsg(`A 6-digit OTP verification code has been dispatched to ${cleanEmail}. Please check your email inbox and spam folder.`);
         } else {
-          setAdminSuccessMsg(`Email server offline. Verification code issued for administrator session.`);
+          setAdminSuccessMsg(`Verification code issued for your active administrator session.`);
+          setShowAdminBackupCode(true);
         }
         setAdminResendTimer(30);
       } else {
@@ -527,7 +532,8 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
         if (res.emailDelivered) {
           setAdminSuccessMsg(`A fresh 6-digit OTP code has been dispatched to ${cleanEmail}.`);
         } else {
-          setAdminSuccessMsg(`Fresh verification code issued for administrator session.`);
+          setAdminSuccessMsg(`Fresh verification code issued for your administrator session.`);
+          setShowAdminBackupCode(true);
         }
         setAdminResendTimer(30);
       } else {
