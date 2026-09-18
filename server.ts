@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
@@ -315,6 +316,74 @@ async function startServer() {
     } catch (err: any) {
       console.error("Error verifying OTP:", err);
       return res.status(500).json({ error: "Failed to verify OTP code." });
+    }
+  });
+
+  // =======================================================
+  // Permanent Server-Side JSON Database Persistence Engine
+  // =======================================================
+  const DATA_DIR = path.join(process.cwd(), "data");
+  const DB_FILE = path.join(DATA_DIR, "iso_database.json");
+
+  // Ensure data directory exists
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  // 1. Fetch entire permanent database from disk
+  app.get("/api/database", async (req, res) => {
+    try {
+      if (fs.existsSync(DB_FILE)) {
+        const content = await fs.promises.readFile(DB_FILE, "utf-8");
+        const parsed = JSON.parse(content);
+        return res.json({ success: true, exists: true, data: parsed });
+      }
+      return res.json({ success: true, exists: false, data: null });
+    } catch (err: any) {
+      console.error("[DATABASE ENGINE] Error reading database file:", err);
+      return res.status(500).json({ error: "Failed to read database file from server." });
+    }
+  });
+
+  // 2. Save entire permanent database snapshot to disk
+  app.post("/api/database/save", async (req, res) => {
+    try {
+      const payload = req.body;
+      if (!payload || typeof payload !== "object") {
+        return res.status(400).json({ error: "Invalid database payload." });
+      }
+
+      // Read existing DB if present to merge safely
+      let currentData: any = {};
+      if (fs.existsSync(DB_FILE)) {
+        try {
+          const content = await fs.promises.readFile(DB_FILE, "utf-8");
+          currentData = JSON.parse(content);
+        } catch (e) {
+          console.warn("[DATABASE ENGINE] Warning reading existing data for merge:", e);
+        }
+      }
+
+      const mergedData = {
+        ...currentData,
+        ...payload,
+        updatedAt: new Date().toISOString()
+      };
+
+      // Atomic write using unique temp file and rename
+      const tempPath = `${DB_FILE}.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 7)}`;
+      await fs.promises.writeFile(tempPath, JSON.stringify(mergedData, null, 2), "utf-8");
+      await fs.promises.rename(tempPath, DB_FILE);
+
+      console.log(`[DATABASE ENGINE] Successfully persisted database snapshot to disk (Updated: ${mergedData.updatedAt})`);
+      return res.json({
+        success: true,
+        savedAt: mergedData.updatedAt,
+        message: "Database successfully saved to permanent storage."
+      });
+    } catch (err: any) {
+      console.error("[DATABASE ENGINE] Error writing database to disk:", err);
+      return res.status(500).json({ error: "Failed to write database to disk." });
     }
   });
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ISO_LOGO_URL, SUPER_ADMIN_INFO } from '../data/initialData';
-import { Search, Sun, Moon, Shield, Bell, Lock, User, KeyRound, CheckCircle2, Menu, Camera, Globe, Building2, Phone, Check, ExternalLink, LogOut } from 'lucide-react';
+import { Search, Sun, Moon, Shield, Bell, Lock, User, KeyRound, CheckCircle2, Menu, Camera, Globe, Building2, Phone, Check, ExternalLink, LogOut, Database, Save } from 'lucide-react';
 import { ActiveTab, AdminUser, RegistrationNotification, AdminCredential } from '../types';
 
 interface HeaderProps {
@@ -23,6 +23,12 @@ interface HeaderProps {
   onMarkNotificationRead?: (id: string) => void;
   onClearNotifications?: () => void;
   onOpenPortal?: (defaultPortal?: 'member' | 'official' | 'adminLogin') => void;
+  serverSyncStatus?: {
+    syncing: boolean;
+    lastSavedAt: string | null;
+    error: string | null;
+  };
+  onForceSaveDatabase?: () => Promise<boolean>;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -65,11 +71,14 @@ export const Header: React.FC<HeaderProps> = ({
   registrationNotifications = [],
   onMarkNotificationRead,
   onClearNotifications,
-  onOpenPortal
+  onOpenPortal,
+  serverSyncStatus,
+  onForceSaveDatabase
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
   const [localSearch, setLocalSearch] = useState('');
+  const [savingDb, setSavingDb] = useState(false);
 
   const unreadCount = registrationNotifications.filter((n) => !n.isRead).length;
 
@@ -189,6 +198,36 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
           <span className="text-xs font-medium text-slate-300">System Stable</span>
         </div>
+
+        {/* Permanent Database Storage Save Button & Live Sync Status */}
+        {onForceSaveDatabase && !isRegularMember && (
+          <button
+            type="button"
+            onClick={async () => {
+              setSavingDb(true);
+              await onForceSaveDatabase();
+              setTimeout(() => setSavingDb(false), 800);
+            }}
+            disabled={serverSyncStatus?.syncing || savingDb}
+            className={`flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer border ${
+              serverSyncStatus?.syncing || savingDb
+                ? 'bg-amber-600/30 text-amber-300 border-amber-500/40 animate-pulse'
+                : serverSyncStatus?.error
+                ? 'bg-red-600/30 text-red-300 border-red-500/40'
+                : 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
+            }`}
+            title={
+              serverSyncStatus?.lastSavedAt
+                ? `Permanent Database: Last saved to server at ${new Date(serverSyncStatus.lastSavedAt).toLocaleTimeString()}. Click to force save now.`
+                : 'Click to force save all records permanently to server storage.'
+            }
+          >
+            <Database className={`w-3.5 h-3.5 text-emerald-400 ${serverSyncStatus?.syncing || savingDb ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">
+              {serverSyncStatus?.syncing || savingDb ? 'Saving...' : 'Save Database'}
+            </span>
+          </button>
+        )}
 
         {/* Theme Toggle */}
         <button

@@ -21,6 +21,14 @@ import {
   SUPER_ADMIN_INFO
 } from './data/initialData';
 import { DocumentRecord, EventRecord, DonationRecord } from './types';
+import {
+  loadDatabaseFromServer,
+  persistDatabaseToServer,
+  scheduleDatabaseSync,
+  safeSetLocalStorage,
+  safeGetLocalStorage,
+  subscribeToDatabaseSync
+} from './services/databaseService';
 
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -198,14 +206,147 @@ export function App() {
     ];
   });
 
-  // Current Logged In Admin - Defaults to null to force authentication gate
-  const [currentLoggedInUser, setCurrentLoggedInUser] = useState<AdminCredential | null>(null);
+  // Current Logged In Admin - Preserves active session across page reloads
+  const [currentLoggedInUser, setCurrentLoggedInUser] = useState<AdminCredential | null>(() => {
+    const saved = localStorage.getItem('iso_current_logged_in_user');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error parsing stored logged-in session:', e);
+      }
+    }
+    return null;
+  });
+
+  // Permanent Server Database Synchronization State
+  const [serverSyncStatus, setServerSyncStatus] = useState<{
+    syncing: boolean;
+    lastSavedAt: string | null;
+    error: string | null;
+  }>({
+    syncing: false,
+    lastSavedAt: null,
+    error: null
+  });
+
+  const [dbLoadedFromServer, setDbLoadedFromServer] = useState(false);
+
+  // Subscribe to real-time server database synchronization status
+  useEffect(() => {
+    return subscribeToDatabaseSync(setServerSyncStatus);
+  }, []);
+
+  // Initial load: Fetch permanent database snapshot from server disk
+  useEffect(() => {
+    let isMounted = true;
+    async function initDatabase() {
+      try {
+        const serverDb = await loadDatabaseFromServer();
+        if (!isMounted) return;
+
+        if (serverDb) {
+          // Merge server data with local records so no user entered records are lost
+          if (serverDb.members && serverDb.members.length > 0) {
+            setMembers((local) => {
+              const map = new Map<string, Member>();
+              serverDb.members!.forEach((m) => map.set(m.id, m));
+              local.forEach((m) => {
+                if (!map.has(m.id)) map.set(m.id, m);
+              });
+              return Array.from(map.values());
+            });
+          }
+
+          if (serverDb.officeBearers && serverDb.officeBearers.length > 0) {
+            setOfficeBearers((local) => {
+              const map = new Map<string, OfficeBearer>();
+              serverDb.officeBearers!.forEach((ob) => map.set(ob.id, ob));
+              local.forEach((ob) => {
+                if (!map.has(ob.id)) map.set(ob.id, ob);
+              });
+              return Array.from(map.values());
+            });
+          }
+
+          if (serverDb.admins && serverDb.admins.length > 0) {
+            setAdmins((local) => {
+              const map = new Map<string, AdminUser>();
+              serverDb.admins!.forEach((a) => map.set(a.id || a.email, a));
+              local.forEach((a) => {
+                const key = a.id || a.email;
+                if (!map.has(key)) map.set(key, a);
+              });
+              return Array.from(map.values());
+            });
+          }
+
+          if (serverDb.adminCredentials && serverDb.adminCredentials.length > 0) {
+            setAdminCredentials((local) => {
+              const map = new Map<string, AdminCredential>();
+              serverDb.adminCredentials!.forEach((c) => map.set(c.mobileNumber, c));
+              local.forEach((c) => {
+                if (!map.has(c.mobileNumber)) map.set(c.mobileNumber, c);
+              });
+              return Array.from(map.values());
+            });
+          }
+
+          if (serverDb.designations && serverDb.designations.length > 0) {
+            setDesignations(serverDb.designations);
+          }
+          if (serverDb.documents && serverDb.documents.length > 0) {
+            setDocuments(serverDb.documents);
+          }
+          if (serverDb.events && serverDb.events.length > 0) {
+            setEvents(serverDb.events);
+          }
+          if (serverDb.donations && serverDb.donations.length > 0) {
+            setDonations(serverDb.donations);
+          }
+          if (serverDb.auditLogs && serverDb.auditLogs.length > 0) {
+            setAuditLogs(serverDb.auditLogs);
+          }
+          if (serverDb.superAdminPhoto) {
+            setSuperAdminPhoto(serverDb.superAdminPhoto);
+          }
+        } else {
+          // If server file did not exist yet, persist initial state to initialize permanent storage
+          persistDatabaseToServer({
+            members,
+            officeBearers,
+            designations,
+            admins,
+            adminCredentials,
+            auditLogs,
+            documents,
+            events,
+            donations,
+            registrationNotifications,
+            superAdminPhoto
+          });
+        }
+      } catch (e) {
+        console.error('Error during initial database hydration:', e);
+      } finally {
+        if (isMounted) {
+          setDbLoadedFromServer(true);
+        }
+      }
+    }
+
+    initDatabase();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Welcome Note State
   const [welcomeNote, setWelcomeNote] = useState<string | null>(null);
 
   const handleLoginSuccess = (user: AdminCredential, message?: string) => {
     setCurrentLoggedInUser(user);
+    safeSetLocalStorage('iso_current_logged_in_user', user);
     const note = message || `Welcome back, ${user.name}! Authenticated as ${user.designation} (${user.role}).`;
     setWelcomeNote(note);
     logActivity('User Authentication', `${user.name} (${user.mobileNumber}) logged into system as ${user.role}`);
@@ -220,73 +361,110 @@ export function App() {
     setWelcomeNote(null);
   };
 
+  // Manual trigger to force-save database immediately to server disk
+  const handleForceSaveDatabase = async (): Promise<boolean> => {
+    const success = await persistDatabaseToServer({
+      members,
+      officeBearers,
+      designations,
+      admins,
+      adminCredentials,
+      auditLogs,
+      documents,
+      events,
+      donations,
+      registrationNotifications,
+      superAdminPhoto
+    });
+    if (success) {
+      logActivity('Permanent Storage Saved', 'Full system database permanently written to server disk.');
+    }
+    return success;
+  };
+
   // Modal triggers
   const [showAddMemberDirectly, setShowAddMemberDirectly] = useState(false);
   const [showAddOBDirectly, setShowAddOBDirectly] = useState(false);
   const [showCompulsoryFormModal, setShowCompulsoryFormModal] = useState(false);
 
-  // Sync state to localStorage
+  // Sync state to localStorage & permanent server database
   useEffect(() => {
-    localStorage.setItem('iso_members', JSON.stringify(members));
-  }, [members]);
+    safeSetLocalStorage('iso_members', members);
+    if (dbLoadedFromServer) {
+      scheduleDatabaseSync({ members });
+    }
+  }, [members, dbLoadedFromServer]);
 
   useEffect(() => {
-    localStorage.setItem('iso_office_bearers', JSON.stringify(officeBearers));
-  }, [officeBearers]);
+    safeSetLocalStorage('iso_office_bearers', officeBearers);
+    if (dbLoadedFromServer) {
+      scheduleDatabaseSync({ officeBearers });
+    }
+  }, [officeBearers, dbLoadedFromServer]);
 
   useEffect(() => {
-    localStorage.setItem('iso_designations', JSON.stringify(designations));
-  }, [designations]);
+    safeSetLocalStorage('iso_designations', designations);
+    if (dbLoadedFromServer) {
+      scheduleDatabaseSync({ designations });
+    }
+  }, [designations, dbLoadedFromServer]);
 
   useEffect(() => {
-    localStorage.setItem('iso_admins', JSON.stringify(admins));
-  }, [admins]);
+    safeSetLocalStorage('iso_admins', admins);
+    if (dbLoadedFromServer) {
+      scheduleDatabaseSync({ admins });
+    }
+  }, [admins, dbLoadedFromServer]);
 
   useEffect(() => {
-    localStorage.setItem('iso_admin_credentials', JSON.stringify(adminCredentials));
-  }, [adminCredentials]);
+    safeSetLocalStorage('iso_admin_credentials', adminCredentials);
+    if (dbLoadedFromServer) {
+      scheduleDatabaseSync({ adminCredentials });
+    }
+  }, [adminCredentials, dbLoadedFromServer]);
 
   useEffect(() => {
-    localStorage.setItem('iso_registration_notifications', JSON.stringify(registrationNotifications));
-  }, [registrationNotifications]);
+    safeSetLocalStorage('iso_registration_notifications', registrationNotifications);
+    if (dbLoadedFromServer) {
+      scheduleDatabaseSync({ registrationNotifications });
+    }
+  }, [registrationNotifications, dbLoadedFromServer]);
+
+  useEffect(() => {
+    safeSetLocalStorage('iso_audit_logs', auditLogs);
+    if (dbLoadedFromServer) {
+      scheduleDatabaseSync({ auditLogs });
+    }
+  }, [auditLogs, dbLoadedFromServer]);
+
+  useEffect(() => {
+    safeSetLocalStorage('iso_documents', documents);
+    if (dbLoadedFromServer) {
+      scheduleDatabaseSync({ documents });
+    }
+  }, [documents, dbLoadedFromServer]);
+
+  useEffect(() => {
+    safeSetLocalStorage('iso_events', events);
+    if (dbLoadedFromServer) {
+      scheduleDatabaseSync({ events });
+    }
+  }, [events, dbLoadedFromServer]);
+
+  useEffect(() => {
+    safeSetLocalStorage('iso_donations', donations);
+    if (dbLoadedFromServer) {
+      scheduleDatabaseSync({ donations });
+    }
+  }, [donations, dbLoadedFromServer]);
 
   useEffect(() => {
     if (currentLoggedInUser) {
-      localStorage.setItem('iso_current_logged_in_user', JSON.stringify(currentLoggedInUser));
+      safeSetLocalStorage('iso_current_logged_in_user', currentLoggedInUser);
     } else {
       localStorage.removeItem('iso_current_logged_in_user');
     }
   }, [currentLoggedInUser]);
-
-  // Handle URL Portal Params (e.g. ?portal=superAdmin, ?portal=adminLogin, ?portal=member or ?portal=official)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const portalParam = params.get('portal');
-    if (portalParam === 'superAdmin' || portalParam === 'adminLogin') {
-      setPortalDefaultTab('adminLogin');
-      setIsPortalOpen(true);
-    } else if (portalParam === 'member' || portalParam === 'official') {
-      setPortalDefaultTab(portalParam as any);
-      setIsPortalOpen(true);
-    }
-  }, []);
-
-
-  useEffect(() => {
-    localStorage.setItem('iso_audit_logs', JSON.stringify(auditLogs));
-  }, [auditLogs]);
-
-  useEffect(() => {
-    localStorage.setItem('iso_documents', JSON.stringify(documents));
-  }, [documents]);
-
-  useEffect(() => {
-    localStorage.setItem('iso_events', JSON.stringify(events));
-  }, [events]);
-
-  useEffect(() => {
-    localStorage.setItem('iso_donations', JSON.stringify(donations));
-  }, [donations]);
 
   // Dark mode handler
   useEffect(() => {
@@ -358,19 +536,125 @@ export function App() {
 
   // Admin Handlers
   const handleAddAdmin = (adm: AdminUser) => {
-    setAdmins((prev) => [...prev, adm]);
+    let updatedAdmins: AdminUser[] = [];
+    setAdmins((prev) => {
+      const exists = prev.some((a) => a.id === adm.id || (a.email && a.email.toLowerCase() === adm.email.toLowerCase()));
+      if (exists) {
+        updatedAdmins = prev.map((a) => (a.id === adm.id || (a.email && a.email.toLowerCase() === adm.email.toLowerCase()) ? adm : a));
+      } else {
+        updatedAdmins = [...prev, adm];
+      }
+      return updatedAdmins;
+    });
+
+    // Auto-create/sync credentials so the newly created admin can log in via mobile password OR email OTP!
+    const cleanMobile = adm.phone?.trim() || '';
+    const newCred: AdminCredential = {
+      mobileNumber: cleanMobile || '0300' + Math.floor(1000000 + Math.random() * 9000000),
+      password: 'admin123',
+      name: adm.name,
+      designation: adm.designation,
+      role: (adm.role as any) || 'Admin',
+      isSuperAdmin: Boolean(adm.isSuperAdmin),
+      createdDate: adm.createdDate || new Date().toISOString().split('T')[0],
+      email: adm.email?.trim().toLowerCase(),
+      memberId: adm.id
+    };
+
+    let updatedCreds: AdminCredential[] = [];
+    setAdminCredentials((prev) => {
+      const filtered = prev.filter(
+        (c) =>
+          (!cleanMobile || c.mobileNumber !== cleanMobile) &&
+          (!adm.email || c.email?.toLowerCase() !== adm.email.toLowerCase()) &&
+          (c.memberId !== adm.id)
+      );
+      updatedCreds = [newCred, ...filtered];
+      return updatedCreds;
+    });
+
     logActivity('Admin Created', `Granted admin access to ${adm.name} (${adm.designation})`);
+
+    // Immediate permanent server database save
+    setTimeout(() => {
+      persistDatabaseToServer({
+        admins: updatedAdmins.length > 0 ? updatedAdmins : undefined,
+        adminCredentials: updatedCreds.length > 0 ? updatedCreds : undefined
+      });
+    }, 100);
   };
 
   const handleEditAdmin = (adm: AdminUser) => {
-    setAdmins((prev) => prev.map((item) => (item.id === adm.id ? adm : item)));
+    let updatedAdmins: AdminUser[] = [];
+    setAdmins((prev) => {
+      updatedAdmins = prev.map((item) => (item.id === adm.id ? adm : item));
+      return updatedAdmins;
+    });
+
+    let updatedCreds: AdminCredential[] = [];
+    setAdminCredentials((prev) => {
+      updatedCreds = prev.map((c) => {
+        if (
+          (adm.phone && c.mobileNumber === adm.phone.trim()) ||
+          (adm.email && c.email?.toLowerCase() === adm.email.trim().toLowerCase()) ||
+          (c.memberId === adm.id)
+        ) {
+          return {
+            ...c,
+            name: adm.name,
+            designation: adm.designation,
+            role: (adm.role as any) || c.role,
+            isSuperAdmin: Boolean(adm.isSuperAdmin),
+            email: adm.email?.trim().toLowerCase() || c.email,
+            mobileNumber: adm.phone?.trim() || c.mobileNumber
+          };
+        }
+        return c;
+      });
+      return updatedCreds;
+    });
+
     logActivity('Admin Permissions Modified', `Updated RBAC rights for admin ${adm.name}`);
+
+    // Immediate permanent server database save
+    setTimeout(() => {
+      persistDatabaseToServer({
+        admins: updatedAdmins,
+        adminCredentials: updatedCreds
+      });
+    }, 100);
   };
 
   const handleDeleteAdmin = (id: string) => {
     const target = admins.find((a) => a.id === id);
-    setAdmins((prev) => prev.filter((a) => a.id !== id));
+    let updatedAdmins: AdminUser[] = [];
+    setAdmins((prev) => {
+      updatedAdmins = prev.filter((a) => a.id !== id);
+      return updatedAdmins;
+    });
+
+    let updatedCreds: AdminCredential[] = [];
+    if (target) {
+      setAdminCredentials((prev) => {
+        updatedCreds = prev.filter(
+          (c) =>
+            c.memberId !== id &&
+            (!target.phone || c.mobileNumber !== target.phone.trim()) &&
+            (!target.email || c.email?.toLowerCase() !== target.email.trim().toLowerCase())
+        );
+        return updatedCreds;
+      });
+    }
+
     logActivity('Admin Removed', `Revoked admin permissions for ${target?.name || id}`);
+
+    // Immediate permanent server database save
+    setTimeout(() => {
+      persistDatabaseToServer({
+        admins: updatedAdmins,
+        adminCredentials: updatedCreds.length > 0 ? updatedCreds : undefined
+      });
+    }, 100);
   };
 
   const handleDeleteDocument = (id: string) => {
@@ -542,7 +826,38 @@ export function App() {
       status: 'Pending'
     };
 
-    setMembers((prev) => [newMember, ...prev]);
+    let updatedMembers: Member[] = [];
+    setMembers((prev) => {
+      updatedMembers = [newMember, ...prev];
+      return updatedMembers;
+    });
+
+    // Save login credentials so the new user can immediately log in
+    let updatedCreds: AdminCredential[] = [];
+    if (newMember.mobileNumber || newMember.email) {
+      const cleanMobile = newMember.mobileNumber?.trim() || '';
+      const memberCred: AdminCredential = {
+        mobileNumber: cleanMobile || '0300' + Math.floor(1000000 + Math.random() * 9000000),
+        password: 'email_otp_verified',
+        name: newMember.fullName,
+        designation: 'ISO General Member',
+        role: 'Viewer',
+        isSuperAdmin: false,
+        createdDate: newMember.joiningDate,
+        email: newMember.email?.trim().toLowerCase(),
+        memberId: newMember.id
+      };
+
+      setAdminCredentials((prev) => {
+        const filtered = prev.filter(
+          (c) =>
+            (!cleanMobile || c.mobileNumber !== cleanMobile) &&
+            (!memberCred.email || c.email?.toLowerCase() !== memberCred.email)
+        );
+        updatedCreds = [memberCred, ...filtered];
+        return updatedCreds;
+      });
+    }
 
     const notif: RegistrationNotification = {
       id: `NOTIF-${Date.now()}`,
@@ -559,6 +874,14 @@ export function App() {
     setRegistrationNotifications((prev) => [notif, ...prev]);
 
     logActivity('Member Registration (Pending)', `${newMember.fullName} registered from ${newMember.city} (Card Status: Pending Approval)`);
+
+    // Immediate permanent server database save
+    setTimeout(() => {
+      persistDatabaseToServer({
+        members: updatedMembers.length > 0 ? updatedMembers : undefined,
+        adminCredentials: updatedCreds.length > 0 ? updatedCreds : undefined
+      });
+    }, 100);
   };
 
   const handleRegisterOfficeBearerFromPortal = (bearerData: Omit<OfficeBearer, 'id' | 'appointmentDate' | 'status'>) => {
@@ -569,7 +892,37 @@ export function App() {
       status: 'Active'
     };
 
-    setOfficeBearers((prev) => [newOb, ...prev]);
+    let updatedObs: OfficeBearer[] = [];
+    setOfficeBearers((prev) => {
+      updatedObs = [newOb, ...prev];
+      return updatedObs;
+    });
+
+    let updatedCreds: AdminCredential[] = [];
+    if (newOb.mobileNumber || newOb.email) {
+      const cleanMobile = newOb.mobileNumber?.trim() || '';
+      const bearerCred: AdminCredential = {
+        mobileNumber: cleanMobile || '0300' + Math.floor(1000000 + Math.random() * 9000000),
+        password: 'admin123',
+        name: newOb.name,
+        designation: newOb.designation,
+        role: 'Manager',
+        isSuperAdmin: false,
+        createdDate: newOb.appointmentDate,
+        email: newOb.email?.trim().toLowerCase(),
+        memberId: newOb.id
+      };
+
+      setAdminCredentials((prev) => {
+        const filtered = prev.filter(
+          (c) =>
+            (!cleanMobile || c.mobileNumber !== cleanMobile) &&
+            (!bearerCred.email || c.email?.toLowerCase() !== bearerCred.email)
+        );
+        updatedCreds = [bearerCred, ...filtered];
+        return updatedCreds;
+      });
+    }
 
     const notif: RegistrationNotification = {
       id: `NOTIF-${Date.now()}`,
@@ -586,6 +939,14 @@ export function App() {
 
     setRegistrationNotifications((prev) => [notif, ...prev]);
     logActivity('Cabinet Official Self-Registration', `${newOb.name} appointed as ${newOb.designation} from ${newOb.city} (Mobile: ${newOb.mobileNumber})`);
+
+    // Immediate permanent server database save
+    setTimeout(() => {
+      persistDatabaseToServer({
+        officeBearers: updatedObs.length > 0 ? updatedObs : undefined,
+        adminCredentials: updatedCreds.length > 0 ? updatedCreds : undefined
+      });
+    }, 100);
   };
 
   const handleMarkNotificationRead = (id: string) => {
@@ -643,6 +1004,8 @@ export function App() {
         onMarkNotificationRead={handleMarkNotificationRead}
         onClearNotifications={handleClearNotifications}
         onOpenPortal={handleOpenPortal}
+        serverSyncStatus={serverSyncStatus}
+        onForceSaveDatabase={handleForceSaveDatabase}
       />
 
 
@@ -776,7 +1139,14 @@ export function App() {
               officeBearers={officeBearers}
               currentLoggedInUser={currentLoggedInUser}
               onUpdateMember={(updated) => {
-                setMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+                let updatedList: Member[] = [];
+                setMembers((prev) => {
+                  updatedList = prev.map((m) => (m.id === updated.id ? updated : m));
+                  return updatedList;
+                });
+                setTimeout(() => {
+                  persistDatabaseToServer({ members: updatedList });
+                }, 100);
                 logActivity('Member Card Status Updated', `Updated status for ${updated.fullName} to ${updated.status}`);
               }}
             />

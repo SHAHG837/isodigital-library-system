@@ -24,6 +24,7 @@ export interface OfficeBearer {
   designation: string;
   mobileNumber: string;
   whatsapp: string;
+  email?: string;
   city: string;
   district: string;
   division: string;
