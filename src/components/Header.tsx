@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { ISO_LOGO_URL, SUPER_ADMIN_INFO } from '../data/initialData';
-import { Search, Sun, Moon, Shield, Bell, Lock, User, KeyRound, CheckCircle2, Menu, Camera, Globe, Building2, Phone, Check, ExternalLink, LogOut, Database, Save } from 'lucide-react';
+import { Search, Sun, Moon, Shield, Bell, Lock, User, KeyRound, CheckCircle2, Menu, Camera, Globe, Building2, Phone, Check, ExternalLink, LogOut, Database, Save, FileText } from 'lucide-react';
 import { ActiveTab, AdminUser, RegistrationNotification, AdminCredential } from '../types';
+import { SUPABASE_PROJECT_ID } from '../lib/supabaseClient';
 
 interface HeaderProps {
   activeTab?: ActiveTab;
@@ -29,6 +30,8 @@ interface HeaderProps {
     error: string | null;
   };
   onForceSaveDatabase?: () => Promise<boolean>;
+  onOpenSupabaseConfig?: () => void;
+  onOpenCompulsoryForm?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -73,7 +76,9 @@ export const Header: React.FC<HeaderProps> = ({
   onClearNotifications,
   onOpenPortal,
   serverSyncStatus,
-  onForceSaveDatabase
+  onForceSaveDatabase,
+  onOpenSupabaseConfig,
+  onOpenCompulsoryForm
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
@@ -226,6 +231,32 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">
               {serverSyncStatus?.syncing || savingDb ? 'Saving...' : 'Save Database'}
             </span>
+          </button>
+        )}
+
+        {/* Supabase PostgreSQL Status Pill */}
+        {onOpenSupabaseConfig && (
+          <button
+            type="button"
+            onClick={onOpenSupabaseConfig}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold text-xs rounded-xl shadow-sm transition-all"
+            title={`Supabase PostgreSQL Project: ${SUPABASE_PROJECT_ID} (Click for SQL & Diagnostics)`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="hidden sm:inline">Supabase</span>
+          </button>
+        )}
+
+        {/* Compulsory Registration Google Form Link */}
+        {onOpenCompulsoryForm && (
+          <button
+            type="button"
+            onClick={onOpenCompulsoryForm}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/35 font-bold text-xs rounded-xl shadow-sm transition-all"
+            title="Official ISO Membership Registration Google Form"
+          >
+            <FileText className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden md:inline">Google Form</span>
           </button>
         )}
 
@@ -450,6 +481,18 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-colors shadow-lg shadow-emerald-500/20"
                   >
                     <User className="w-4 h-4" /> My Member Particulars
+                  </button>
+                )}
+
+                {onOpenCompulsoryForm && (
+                  <button
+                    onClick={() => {
+                      setShowUserModal(false);
+                      onOpenCompulsoryForm();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-amber-300 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/40 rounded-xl transition-colors"
+                  >
+                    <FileText className="w-4 h-4 text-amber-400" /> Official Google Registration Form
                   </button>
                 )}
 

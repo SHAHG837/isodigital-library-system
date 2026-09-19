@@ -47,6 +47,7 @@ interface DashboardProps {
   welcomeNote?: string | null;
   onDismissWelcomeNote?: () => void;
   onLogout?: () => void;
+  onOpenCompulsoryForm?: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -60,7 +61,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   currentLoggedInUser,
   welcomeNote,
   onDismissWelcomeNote,
-  onLogout
+  onLogout,
+  onOpenCompulsoryForm
 }) => {
   // Compute permissions
   const isSuperAdmin = currentLoggedInUser?.isSuperAdmin || currentLoggedInUser?.role === 'SuperAdmin';
@@ -173,20 +175,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
               Mandatory Member Form: All newly joined members must fill this official Google Form
             </h3>
             <p className="text-xs text-amber-200/80 font-mono text-[11px] break-all">
-              Direct Link: <a href="https://forms.gle/7NiEiCtEr5BFsmkY8" target="_blank" rel="noopener noreferrer" className="underline font-bold text-amber-300 hover:text-white">https://forms.gle/7NiEiCtEr5BFsmkY8</a>
+              Official Form Link:{' '}
+              <a
+                href="https://docs.google.com/forms/d/1eVTnVJ-nqdm6pi-hvyczit_E-xzb75NLuNJZAbFtb3s/edit"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline font-bold text-amber-300 hover:text-white"
+              >
+                https://docs.google.com/forms/d/1eVTnVJ-nqdm6pi-hvyczit_E-xzb75NLuNJZAbFtb3s/edit
+              </a>
             </p>
           </div>
         </div>
 
-        <a
-          href="https://forms.gle/7NiEiCtEr5BFsmkY8"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2 transition-all shrink-0 uppercase tracking-wider"
-        >
-          <span>Fill Google Form Now</span>
-          <ExternalLink className="w-4 h-4" />
-        </a>
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-end md:self-center">
+          {onOpenCompulsoryForm && (
+            <button
+              onClick={onOpenCompulsoryForm}
+              className="px-4 py-2.5 bg-slate-850 hover:bg-slate-800 text-amber-300 border border-amber-500/40 font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
+            >
+              Fill Inside Portal
+            </button>
+          )}
+          <a
+            href="https://docs.google.com/forms/d/1eVTnVJ-nqdm6pi-hvyczit_E-xzb75NLuNJZAbFtb3s/edit"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2 transition-all uppercase tracking-wider"
+          >
+            <span>Open Google Form</span>
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        </div>
       </div>
 
       {/* Sleek Interface Top Welcome Banner */}

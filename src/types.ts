@@ -16,6 +16,17 @@ export interface Member {
   oathSubmitted?: boolean;
   oathDate?: string;
   status: 'Approved' | 'Pending' | 'Rejected' | 'Active' | 'Inactive';
+  forefathers?: MemberForefathers;
+}
+
+export interface MemberForefathers {
+  forefather1: string; // 1st Forefather: Father (والد محترم)
+  forefather2: string; // 2nd Forefather: Grandfather (دادا محترم)
+  forefather3: string; // 3rd Forefather: Great-Grandfather (پردادا محترم)
+  forefather4: string; // 4th Forefather: 4th Ancestor (چوتھی پشت / لکڑدادا)
+  forefather5: string; // 5th Forefather: 5th Ancestor (پانچویں پشت کے بزرگ)
+  forefather6: string; // 6th Forefather: 6th Ancestor (چھٹی پشت کے بزرگ)
+  forefather7: string; // 7th Forefather: 7th Ancestor (ساتویں پشت کے بزرگ)
 }
 
 export interface OfficeBearer {
@@ -165,6 +176,10 @@ export type ActiveTab =
   | 'members'
   | 'officeBearers'
   | 'hierarchy'
+  | 'opportunities'
+  | 'myApplications'
+  | 'savedOpportunities'
+  | 'supabaseConfig'
   | 'superAdmin'
   | 'adminRbac'
   | 'globalSearch'
@@ -180,6 +195,138 @@ export type ActiveTab =
   | 'aiAssistant'
   | 'auditLogs'
   | 'backupSettings';
+
+// ==============================================================================
+// SUPABASE DATABASE SCHEMAS & INTERFACES
+// ==============================================================================
+
+export type UserRole = 'applicant' | 'member' | 'recruiter' | 'admin';
+
+export interface Profile {
+  id: string; // auth.users.id
+  email: string;
+  full_name: string;
+  avatar_url?: string | null;
+  role: UserRole;
+  phone?: string | null;
+  headline?: string | null;
+  bio?: string | null;
+  city?: string | null;
+  country?: string | null;
+  skills: string[];
+  experience_level: 'entry' | 'mid' | 'senior' | 'lead' | 'executive';
+  education?: Array<{
+    institution: string;
+    degree: string;
+    field: string;
+    year?: string;
+  }> | null;
+  resume_url?: string | null;
+  resume_filename?: string | null;
+  target_roles?: string[];
+  preferred_location_type?: 'remote' | 'hybrid' | 'onsite' | 'any';
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type OpportunityType =
+  | 'Full-time'
+  | 'Part-time'
+  | 'Contract'
+  | 'Internship'
+  | 'Scholarship'
+  | 'Fellowship'
+  | 'Mentorship';
+
+export type OpportunityCategory =
+  | 'Engineering'
+  | 'Data & AI'
+  | 'Design'
+  | 'Product'
+  | 'Marketing'
+  | 'Operations'
+  | 'Education'
+  | 'Social Welfare'
+  | 'Healthcare';
+
+export type WorkplaceType = 'Remote' | 'Hybrid' | 'On-site';
+
+export interface Opportunity {
+  id: string;
+  title: string;
+  organization: string;
+  type: OpportunityType;
+  category: OpportunityCategory;
+  location: string;
+  workplace_type: WorkplaceType;
+  description: string;
+  responsibilities: string[];
+  requirements: string[];
+  skills_required: string[];
+  salary_min?: number | null;
+  salary_max?: number | null;
+  currency: string;
+  deadline?: string | null;
+  status: 'active' | 'draft' | 'closed' | 'expired';
+  posted_by?: string | null;
+  contact_email?: string | null;
+  apply_url?: string | null;
+  application_count: number;
+  is_featured: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SavedOpportunity {
+  id: string;
+  user_id: string;
+  opportunity_id: string;
+  notes?: string | null;
+  saved_at: string;
+  opportunity?: Opportunity;
+}
+
+export type ApplicationStatus =
+  | 'submitted'
+  | 'under_review'
+  | 'interviewing'
+  | 'accepted'
+  | 'rejected'
+  | 'withdrawn';
+
+export interface Application {
+  id: string;
+  opportunity_id: string;
+  applicant_id: string;
+  status: ApplicationStatus;
+  resume_url?: string | null;
+  cover_letter?: string | null;
+  portfolio_url?: string | null;
+  answers?: Record<string, any>;
+  feedback?: string | null;
+  match_score?: number | null;
+  applied_at: string;
+  updated_at?: string;
+  opportunity?: Opportunity;
+  applicant?: Profile;
+}
+
+export interface ResumeReviewResult {
+  matchScore: number;
+  summary: string;
+  strengths: string[];
+  missingKeywords: string[];
+  actionItems: string[];
+  experienceAssessment: string;
+  fitLevel: 'High' | 'Moderate' | 'Low';
+}
+
+export interface JobRecommendation {
+  opportunityId: string;
+  matchScore: number;
+  reasons: string[];
+  skillAlignment: string[];
+}
 
 export interface AdminCredential {
   mobileNumber: string; // ID (e.g. 03323475431)

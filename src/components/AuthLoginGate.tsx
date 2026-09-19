@@ -18,10 +18,16 @@ import {
   Mail,
   RefreshCw,
   Copy,
-  Check
+  Check,
+  Database,
+  Sparkles
 } from 'lucide-react';
 import { AdminCredential, Member, OfficeBearer, AdminUser } from '../types';
 import { OathFormModal } from './OathFormModal';
+import {
+  CompulsoryGoogleFormGate,
+  OFFICIAL_GOOGLE_FORM_URL
+} from './CompulsoryGoogleFormGate';
 import {
   isValidEmail,
   checkEmailUniqueness,
@@ -30,6 +36,13 @@ import {
   verifyEmailOtp,
   suggestEmailCorrection
 } from '../services/authOtpService';
+import {
+  signUpWithSupabase,
+  signInWithSupabase,
+  signInWithSupabaseOtp,
+  verifySupabaseOtp,
+  SUPABASE_PROJECT_ID
+} from '../lib/supabaseClient';
 
 interface AuthLoginGateProps {
   adminCredentials: AdminCredential[];
@@ -40,7 +53,7 @@ interface AuthLoginGateProps {
   onRegisterOfficeBearer: (bearerData: Omit<OfficeBearer, 'id' | 'appointmentDate' | 'status'>) => void;
 }
 
-const COMPULSORY_GOOGLE_FORM_URL = 'https://forms.gle/7NiEiCtEr5BFsmkY8';
+const COMPULSORY_GOOGLE_FORM_URL = OFFICIAL_GOOGLE_FORM_URL;
 
 export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
   adminCredentials,
@@ -49,8 +62,21 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
   onLoginSuccess,
   onRegisterMember
 }) => {
-  // Gate Tab: Switch between Member Portal (default) & Admin Panel (discreet)
-  const [activeGateTab, setActiveGateTab] = useState<'member' | 'admin'>('member');
+  // Gate Tab: Switch between Member Portal, Supabase Auth (Cloud), & Admin Panel
+  const [activeGateTab, setActiveGateTab] = useState<'member' | 'supabase' | 'admin'>('member');
+
+  // Supabase Cloud Auth State
+  const [sbAuthMode, setSbAuthMode] = useState<'signin' | 'signup' | 'otp'>('signin');
+  const [sbEmail, setSbEmail] = useState('');
+  const [sbPassword, setSbPassword] = useState('');
+  const [sbFullName, setSbFullName] = useState('');
+  const [sbRole, setSbRole] = useState<'applicant' | 'member' | 'recruiter'>('applicant');
+  const [sbOtpCode, setSbOtpCode] = useState('');
+  const [sbOtpSent, setSbOtpSent] = useState(false);
+  const [sbLoading, setSbLoading] = useState(false);
+  const [sbError, setSbError] = useState('');
+  const [sbSuccessMsg, setSbSuccessMsg] = useState('');
+  const [sbShowPassword, setSbShowPassword] = useState(false);
 
   // Member Auth Sub-tab: 'signin' (existing member OTP) vs 'signup' (new member registration)
   const [memberAuthMode, setMemberAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -603,6 +629,129 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
     }
   };
 
+  // ==========================================
+  // SUPABASE CLOUD AUTHENTICATION HANDLERS
+  // ==========================================
+  const handleSupabaseSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSbError('');
+    setSbSuccessMsg('');
+    if (!sbEmail.trim() || !sbPassword.trim()) {
+      setSbError('Please enter both email and password.');
+      return;
+    }
+    setSbLoading(true);
+    const result = await signInWithSupabase(sbEmail, sbPassword);
+    setSbLoading(false);
+    if (!result.success) {
+      setSbError(result.error || 'Authentication failed. Please check your email and password.');
+      return;
+    }
+    const profile = result.profile;
+    const cred: AdminCredential = {
+      mobileNumber: profile?.phone || '03000000000',
+      password: 'supabase_auth_session',
+      name: profile?.full_name || result.user?.user_metadata?.full_name || sbEmail.split('@')[0],
+      designation: profile?.role === 'admin' ? 'System Administrator' : 'Opportunities Candidate',
+      role: profile?.role === 'admin' ? 'Admin' : 'Viewer',
+      isSuperAdmin: profile?.role === 'admin',
+      createdDate: new Date().toISOString().split('T')[0],
+      email: sbEmail.trim().toLowerCase(),
+      memberId: result.user?.id
+    };
+    onLoginSuccess(cred, `Welcome back, ${cred.name}! Successfully authenticated via Supabase.`);
+  };
+
+  const handleSupabaseSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSbError('');
+    setSbSuccessMsg('');
+    if (!sbEmail.trim() || !sbPassword.trim() || !sbFullName.trim()) {
+      setSbError('Please provide your Full Name, Email Address, and Password.');
+      return;
+    }
+    if (sbPassword.length < 6) {
+      setSbError('Password must be at least 6 characters long.');
+      return;
+    }
+    setSbLoading(true);
+    const result = await signUpWithSupabase(sbEmail, sbPassword, sbFullName, sbRole);
+    setSbLoading(false);
+    if (!result.success) {
+      setSbError(result.error || 'Registration failed.');
+      return;
+    }
+    if (result.session) {
+      const profile = result.profile;
+      const cred: AdminCredential = {
+        mobileNumber: profile?.phone || '03000000000',
+        password: 'supabase_auth_session',
+        name: sbFullName.trim(),
+        designation: sbRole === 'recruiter' ? 'Talent Recruiter' : 'Opportunities Candidate',
+        role: 'Viewer',
+        isSuperAdmin: false,
+        createdDate: new Date().toISOString().split('T')[0],
+        email: sbEmail.trim().toLowerCase(),
+        memberId: result.user?.id
+      };
+      onLoginSuccess(cred, `Account created! Welcome to the portal, ${sbFullName.trim()}.`);
+    } else {
+      setSbSuccessMsg(
+        `Account created successfully in Supabase! A profile row was created in public.profiles. You can sign in right now with your email & password.`
+      );
+      setSbAuthMode('signin');
+    }
+  };
+
+  const handleSupabaseSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSbError('');
+    setSbSuccessMsg('');
+    if (!sbEmail.trim()) {
+      setSbError('Please enter your email address.');
+      return;
+    }
+    setSbLoading(true);
+    const result = await signInWithSupabaseOtp(sbEmail);
+    setSbLoading(false);
+    if (!result.success) {
+      setSbError(result.error || 'Failed to dispatch Supabase login link / OTP.');
+      return;
+    }
+    setSbOtpSent(true);
+    setSbSuccessMsg(`Verification link / OTP code dispatched to ${sbEmail}. Please check your inbox.`);
+  };
+
+  const handleSupabaseVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSbError('');
+    setSbSuccessMsg('');
+    if (!sbOtpCode.trim()) {
+      setSbError('Please enter the 6-digit verification code.');
+      return;
+    }
+    setSbLoading(true);
+    const result = await verifySupabaseOtp(sbEmail, sbOtpCode);
+    setSbLoading(false);
+    if (!result.success) {
+      setSbError(result.error || 'Invalid code. Please try again.');
+      return;
+    }
+    const profile = result.profile;
+    const cred: AdminCredential = {
+      mobileNumber: profile?.phone || '03000000000',
+      password: 'supabase_auth_session',
+      name: profile?.full_name || sbEmail.split('@')[0],
+      designation: profile?.role === 'admin' ? 'System Administrator' : 'Opportunities Candidate',
+      role: profile?.role === 'admin' ? 'Admin' : 'Viewer',
+      isSuperAdmin: profile?.role === 'admin',
+      createdDate: new Date().toISOString().split('T')[0],
+      email: sbEmail.trim().toLowerCase(),
+      memberId: result.user?.id
+    };
+    onLoginSuccess(cred, `Welcome! Verified via Supabase.`);
+  };
+
   // Submit Admin Mobile & Password
   const handleAdminPasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -728,19 +877,12 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
       
-      {/* Official In-App ISO OUTH FORM (حلف نامہ) for Newly Joined Member */}
+      {/* Official Compulsory Google Registration Form for Newly Joined Member */}
       {newMemberJoinedData && (
-        <OathFormModal
-          isOpen={true}
-          memberData={{
-            id: newMemberJoinedData.cred.memberId || `ISO-MEM-${Date.now().toString().slice(-4)}`,
-            fullName: newMemberJoinedData.cred.name,
-            email: newMemberJoinedData.cred.email || '',
-            mobileNumber: newMemberJoinedData.cred.mobileNumber,
-            city: regCity || 'Karachi',
-            district: regDistrict || regCity || 'Karachi'
-          }}
-          onCompleteOath={handleFinalizeMemberEntry}
+        <CompulsoryGoogleFormGate
+          isModalMode={true}
+          user={newMemberJoinedData.cred}
+          onFormCompleted={handleFinalizeMemberEntry}
         />
       )}
 
@@ -762,11 +904,49 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
           </p>
           <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-[10px] font-semibold text-emerald-300">
             <KeyRound className="w-3 h-3" />
-            <span>Email OTP Authentication (1 Email = 1 ID)</span>
+            <span>Email OTP & Supabase PostgreSQL Authentication</span>
           </div>
         </div>
 
-        {/* Dynamic Content: Admin Mode vs Member Mode */}
+        {/* Navigation Switcher: Member Portal vs Supabase Auth (Cloud) */}
+        {activeGateTab !== 'admin' && (
+          <div className="grid grid-cols-2 gap-1 p-2 bg-slate-950/80 border-b border-slate-800 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveGateTab('member');
+                setSbError('');
+                setSbSuccessMsg('');
+              }}
+              className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeGateTab === 'member'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Member Portal (OTP)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveGateTab('supabase');
+                setSignInError('');
+                setRegError('');
+              }}
+              className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeGateTab === 'supabase'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Supabase Auth (Cloud)</span>
+            </button>
+          </div>
+        )}
+
+        {/* Dynamic Content: Admin Mode vs Supabase Mode vs Member Mode */}
         {activeGateTab === 'admin' ? (
           /* ========================================================= */
           /* ADMIN & CABINET LOGIN                                     */
@@ -1130,6 +1310,342 @@ export const AuthLoginGate: React.FC<AuthLoginGateProps> = ({
                   </form>
                 </div>
               )}
+            </div>
+          </div>
+        ) : activeGateTab === 'supabase' ? (
+          /* ========================================================= */
+          /* SUPABASE CLOUD AUTHENTICATION (PostgreSQL Backend)        */
+          /* ========================================================= */
+          <div className="p-5 space-y-4">
+            {/* Supabase Sub-tab Selector */}
+            <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => {
+                  setSbAuthMode('signin');
+                  setSbError('');
+                  setSbSuccessMsg('');
+                }}
+                className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  sbAuthMode === 'signin'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSbAuthMode('signup');
+                  setSbError('');
+                  setSbSuccessMsg('');
+                }}
+                className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  sbAuthMode === 'signup'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Sign Up (New)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSbAuthMode('otp');
+                  setSbError('');
+                  setSbSuccessMsg('');
+                }}
+                className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  sbAuthMode === 'otp'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Magic Link
+              </button>
+            </div>
+
+            {/* Cloud Status Badge */}
+            <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>PostgreSQL Auth • Project: <strong className="text-emerald-400 font-mono">{SUPABASE_PROJECT_ID}</strong></span>
+              </div>
+              <span className="text-[10px] text-emerald-400/80 font-mono bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                db/schema.sql
+              </span>
+            </div>
+
+            {sbError && (
+              <div className="p-3 bg-red-950/80 border border-red-500/40 text-red-200 text-xs rounded-xl flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{sbError}</span>
+              </div>
+            )}
+
+            {sbSuccessMsg && (
+              <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 text-xs rounded-xl flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{sbSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* SIGN IN FORM */}
+            {sbAuthMode === 'signin' && (
+              <form onSubmit={handleSupabaseSignIn} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Email Address <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                    <input
+                      type="email"
+                      required
+                      placeholder="e.g. candidate@example.com"
+                      value={sbEmail}
+                      onChange={(e) => setSbEmail(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Password <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                    <input
+                      type={sbShowPassword ? 'text' : 'password'}
+                      required
+                      placeholder="Enter password"
+                      value={sbPassword}
+                      onChange={(e) => setSbPassword(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-12 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSbShowPassword(!sbShowPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-white text-xs px-1 cursor-pointer"
+                    >
+                      {sbShowPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={sbLoading}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {sbLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                  <span>Sign In with Supabase</span>
+                </button>
+
+                <p className="text-[11px] text-slate-400 text-center">
+                  Don't have a Supabase account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setSbAuthMode('signup'); setSbError(''); }}
+                    className="text-emerald-400 hover:underline font-semibold cursor-pointer"
+                  >
+                    Sign Up now
+                  </button>
+                </p>
+              </form>
+            )}
+
+            {/* SIGN UP FORM (Creates user in auth.users and profile in public.profiles via SQL trigger) */}
+            {sbAuthMode === 'signup' && (
+              <form onSubmit={handleSupabaseSignUp} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Full Name <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Syed Ali Raza"
+                      value={sbFullName}
+                      onChange={(e) => setSbFullName(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Email Address <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                    <input
+                      type="email"
+                      required
+                      placeholder="e.g. candidate@example.com"
+                      value={sbEmail}
+                      onChange={(e) => setSbEmail(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Create Password (min. 6 characters) <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                    <input
+                      type={sbShowPassword ? 'text' : 'password'}
+                      required
+                      placeholder="Choose a password"
+                      value={sbPassword}
+                      onChange={(e) => setSbPassword(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-12 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSbShowPassword(!sbShowPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-white text-xs px-1 cursor-pointer"
+                    >
+                      {sbShowPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Portal Account Role
+                  </label>
+                  <select
+                    value={sbRole}
+                    onChange={(e: any) => setSbRole(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <option value="applicant">Candidate / Job Seeker</option>
+                    <option value="member">ISO Community Member</option>
+                    <option value="recruiter">Recruiter / Employer</option>
+                  </select>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/20 text-[11px] text-emerald-300 flex items-start gap-2">
+                  <Sparkles className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
+                  <span>
+                    New signups create an entry in <strong>auth.users</strong>. The trigger in <strong>db/schema.sql</strong> (<code className="text-white font-mono">on_auth_user_created</code>) automatically provisions your <strong className="text-white">public.profiles</strong> record!
+                  </span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={sbLoading}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {sbLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>Sign Up & Create Profile in Supabase</span>
+                </button>
+
+                <p className="text-[11px] text-slate-400 text-center">
+                  Already registered?{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setSbAuthMode('signin'); setSbError(''); }}
+                    className="text-emerald-400 hover:underline font-semibold cursor-pointer"
+                  >
+                    Sign In
+                  </button>
+                </p>
+              </form>
+            )}
+
+            {/* MAGIC LINK / OTP FORM */}
+            {sbAuthMode === 'otp' && (
+              !sbOtpSent ? (
+                <form onSubmit={handleSupabaseSendOtp} className="space-y-3">
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Receive a one-time verification link or OTP code in your inbox to sign in password-free.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Email Address <span className="text-red-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
+                      <input
+                        type="email"
+                        required
+                        placeholder="e.g. candidate@example.com"
+                        value={sbEmail}
+                        onChange={(e) => setSbEmail(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={sbLoading}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {sbLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                    <span>Send Magic Link / OTP Code</span>
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleSupabaseVerifyOtp} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Enter 6-digit OTP from Email <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      placeholder="123456"
+                      value={sbOtpCode}
+                      onChange={(e) => setSbOtpCode(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-center text-xl tracking-widest font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={sbLoading}
+                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {sbLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                      <span>Verify & Log In</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSbOtpSent(false)}
+                      className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </form>
+              )
+            )}
+
+            {/* Subtle link to Admin */}
+            <div className="pt-3 border-t border-slate-800 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveGateTab('admin');
+                  setSbError('');
+                }}
+                className="text-[11px] text-slate-500 hover:text-amber-400 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Administrator & Official Cabinet Access</span>
+              </button>
             </div>
           </div>
         ) : (

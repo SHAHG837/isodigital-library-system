@@ -23,7 +23,11 @@ import {
   ChevronRight,
   Menu,
   X,
-  LogOut
+  LogOut,
+  Briefcase,
+  FileCheck2,
+  Bookmark,
+  Sparkles
 } from 'lucide-react';
 import { ActiveTab, AdminCredential } from '../types';
 import { SUPER_ADMIN_INFO } from '../data/initialData';
@@ -60,6 +64,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isRegularMember = Boolean(currentLoggedInUser && !isAdminOrManager);
 
   const fullNavSections = [
+    {
+      title: 'Career & Opportunities',
+      items: [
+        { id: 'opportunities' as ActiveTab, label: 'Opportunities & Jobs', icon: Briefcase, badge: 'Supabase' },
+        { id: 'myApplications' as ActiveTab, label: 'My Applications', icon: FileCheck2 },
+        { id: 'savedOpportunities' as ActiveTab, label: 'Saved Bookmarks', icon: Bookmark },
+        { id: 'supabaseConfig' as ActiveTab, label: 'Supabase & SQL', icon: Database, badge: 'Postgres' }
+      ]
+    },
     {
       title: 'Navigation',
       items: [

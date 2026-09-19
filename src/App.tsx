@@ -7,7 +7,8 @@ import {
   AuditLog,
   ActiveTab,
   AdminCredential,
-  RegistrationNotification
+  RegistrationNotification,
+  Profile
 } from './types';
 import {
   INITIAL_MEMBERS,
@@ -45,16 +46,29 @@ import { ExportImportModule } from './components/ExportImportModule';
 import { GoogleSheetsModule } from './components/GoogleSheetsModule';
 import { AiAssistantModule } from './components/AiAssistantModule';
 import { AuditLogsModule } from './components/AuditLogsModule';
+import { OpportunitiesModule } from './components/OpportunitiesModule';
+import { ApplicationsModule } from './components/ApplicationsModule';
+import { SavedOpportunitiesModule } from './components/SavedOpportunitiesModule';
+import { SupabaseConfigModal } from './components/SupabaseConfigModal';
+import {
+  SUPABASE_PROJECT_ID,
+  getSupabaseSession,
+  onSupabaseAuthStateChange,
+  signOutSupabase,
+  getProfile
+} from './lib/supabaseClient';
 import { Footer } from './components/Footer';
 import { PortalModal } from './components/PortalModal';
 import { AuthLoginGate } from './components/AuthLoginGate';
+import { CompulsoryGoogleFormGate } from './components/CompulsoryGoogleFormGate';
 import { FileText, ExternalLink } from 'lucide-react';
 
 export function App() {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('opportunities');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isSupabaseConfigOpen, setIsSupabaseConfigOpen] = useState(false);
 
   // Portal & Auth Modal State
   const [isPortalOpen, setIsPortalOpen] = useState(false);
@@ -237,6 +251,59 @@ export function App() {
     return subscribeToDatabaseSync(setServerSyncStatus);
   }, []);
 
+  // Listen to Supabase Auth state changes & sync session
+  useEffect(() => {
+    let isMounted = true;
+
+    // Check existing Supabase session
+    getSupabaseSession().then(async (session) => {
+      if (!isMounted || !session?.user) return;
+      
+      const saved = localStorage.getItem('iso_current_logged_in_user');
+      if (!saved) {
+        const profile = await getProfile(session.user.id);
+        const cred: AdminCredential = {
+          mobileNumber: profile?.phone || '03000000000',
+          password: 'supabase_auth_session',
+          name: profile?.full_name || session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
+          designation: profile?.role === 'admin' ? 'System Administrator' : 'Opportunities Candidate',
+          role: profile?.role === 'admin' ? 'Admin' : 'Viewer',
+          isSuperAdmin: profile?.role === 'admin',
+          createdDate: new Date().toISOString().split('T')[0],
+          email: session.user.email,
+          memberId: session.user.id
+        };
+        setCurrentLoggedInUser(cred);
+        localStorage.setItem('iso_current_logged_in_user', JSON.stringify(cred));
+      }
+    });
+
+    const { data: authListener } = onSupabaseAuthStateChange(async (event, session) => {
+      if (!isMounted) return;
+      if (event === 'SIGNED_IN' && session?.user) {
+        const profile = await getProfile(session.user.id);
+        const cred: AdminCredential = {
+          mobileNumber: profile?.phone || '03000000000',
+          password: 'supabase_auth_session',
+          name: profile?.full_name || session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
+          designation: profile?.role === 'admin' ? 'System Administrator' : 'Opportunities Candidate',
+          role: profile?.role === 'admin' ? 'Admin' : 'Viewer',
+          isSuperAdmin: profile?.role === 'admin',
+          createdDate: new Date().toISOString().split('T')[0],
+          email: session.user.email,
+          memberId: session.user.id
+        };
+        setCurrentLoggedInUser(cred);
+        localStorage.setItem('iso_current_logged_in_user', JSON.stringify(cred));
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      authListener?.subscription?.unsubscribe?.();
+    };
+  }, []);
+
   // Initial load: Fetch permanent database snapshot from server disk
   useEffect(() => {
     let isMounted = true;
@@ -356,6 +423,7 @@ export function App() {
     if (currentLoggedInUser) {
       logActivity('User Logout', `${currentLoggedInUser.name} (${currentLoggedInUser.mobileNumber}) logged out.`);
     }
+    signOutSupabase().catch((err) => console.warn('Notice signing out of Supabase:', err));
     localStorage.removeItem('iso_current_logged_in_user');
     setCurrentLoggedInUser(null);
     setWelcomeNote(null);
@@ -386,6 +454,28 @@ export function App() {
   const [showAddMemberDirectly, setShowAddMemberDirectly] = useState(false);
   const [showAddOBDirectly, setShowAddOBDirectly] = useState(false);
   const [showCompulsoryFormModal, setShowCompulsoryFormModal] = useState(false);
+
+  // Compulsory Google Form completion state for logged in member
+  const [hasCompletedGoogleForm, setHasCompletedGoogleForm] = useState<boolean>(() => {
+    const savedUser = localStorage.getItem('iso_current_logged_in_user');
+    if (!savedUser) return false;
+    try {
+      const u = JSON.parse(savedUser);
+      const key = u.email || u.mobileNumber || u.memberId || 'member';
+      return localStorage.getItem(`iso_google_form_completed_${key}`) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (!currentLoggedInUser) {
+      setHasCompletedGoogleForm(false);
+      return;
+    }
+    const key = currentLoggedInUser.email || currentLoggedInUser.mobileNumber || currentLoggedInUser.memberId || 'member';
+    setHasCompletedGoogleForm(localStorage.getItem(`iso_google_form_completed_${key}`) === 'true');
+  }, [currentLoggedInUser]);
 
   // Sync state to localStorage & permanent server database
   useEffect(() => {
@@ -982,9 +1072,46 @@ export function App() {
   const isAdminOrManager = isSuperAdmin || currentLoggedInUser?.role === 'Admin' || currentLoggedInUser?.role === 'Manager';
   const isRegularMember = Boolean(currentLoggedInUser && !isAdminOrManager);
 
+  // Compulsory Google Form Gate: New members must fill every compulsory detail before entering landing page
+  if (isRegularMember && !hasCompletedGoogleForm) {
+    return (
+      <CompulsoryGoogleFormGate
+        user={currentLoggedInUser}
+        onFormCompleted={() => setHasCompletedGoogleForm(true)}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   // Route protection: If regular member attempts to access an admin-only module, route to 'members'
-  const allowedMemberTabs: ActiveTab[] = ['dashboard', 'members', 'hierarchy', 'shajra', 'membershipCard', 'events', 'aiAssistant'];
+  const allowedMemberTabs: ActiveTab[] = [
+    'dashboard',
+    'members',
+    'hierarchy',
+    'shajra',
+    'membershipCard',
+    'events',
+    'aiAssistant',
+    'opportunities',
+    'myApplications',
+    'savedOpportunities',
+    'supabaseConfig'
+  ];
   const effectiveActiveTab = (isRegularMember && !allowedMemberTabs.includes(activeTab)) ? 'members' : activeTab;
+
+  const currentProfile: Profile = {
+    id: currentLoggedInUser?.username || 'user-syed-amir',
+    email: currentLoggedInUser?.email || 'syedmuhammadamir837@gmail.com',
+    full_name: currentLoggedInUser?.name || 'Syed Muhammad Aamir Naqvi',
+    role: isSuperAdmin ? 'admin' : 'applicant',
+    headline: 'Senior Solutions Architect & Full-Stack Engineer',
+    skills: ['TypeScript', 'React', 'Node.js', 'PostgreSQL', 'Supabase', 'Tailwind CSS', 'Docker', 'Git'],
+    experience_level: 'senior',
+    target_roles: ['Software Architect', 'Senior Full Stack Engineer', 'Technical Lead'],
+    preferred_location_type: 'any',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
 
   return (
     <div className={`min-h-screen transition-colors duration-200 ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
@@ -1006,6 +1133,8 @@ export function App() {
         onOpenPortal={handleOpenPortal}
         serverSyncStatus={serverSyncStatus}
         onForceSaveDatabase={handleForceSaveDatabase}
+        onOpenSupabaseConfig={() => setIsSupabaseConfigOpen(true)}
+        onOpenCompulsoryForm={() => setShowCompulsoryFormModal(true)}
       />
 
 
@@ -1037,6 +1166,7 @@ export function App() {
               welcomeNote={welcomeNote}
               onDismissWelcomeNote={() => setWelcomeNote(null)}
               onLogout={handleLogout}
+              onOpenCompulsoryForm={() => setShowCompulsoryFormModal(true)}
               onOpenAddMember={() => {
                 setShowAddMemberDirectly(true);
                 setActiveTab('members');
@@ -1180,6 +1310,58 @@ export function App() {
 
           {effectiveActiveTab === 'auditLogs' && <AuditLogsModule logs={auditLogs} />}
 
+          {effectiveActiveTab === 'opportunities' && (
+            <OpportunitiesModule
+              currentProfile={currentProfile}
+              onOpenSupabaseConfig={() => setIsSupabaseConfigOpen(true)}
+              onOpenMyApplications={() => setActiveTab('myApplications')}
+              onOpenSavedOpportunities={() => setActiveTab('savedOpportunities')}
+            />
+          )}
+
+          {effectiveActiveTab === 'myApplications' && (
+            <ApplicationsModule
+              currentProfile={currentProfile}
+              onExploreOpportunities={() => setActiveTab('opportunities')}
+            />
+          )}
+
+          {effectiveActiveTab === 'savedOpportunities' && (
+            <SavedOpportunitiesModule
+              currentProfile={currentProfile}
+              onExploreOpportunities={() => setActiveTab('opportunities')}
+              onSelectOpportunity={(opp) => {
+                setActiveTab('opportunities');
+              }}
+            />
+          )}
+
+          {effectiveActiveTab === 'supabaseConfig' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div>
+                  <h1 className="text-2xl font-bold text-white tracking-tight">Supabase & PostgreSQL Architecture</h1>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Project: <span className="font-mono text-emerald-400">{SUPABASE_PROJECT_ID}</span> • Real-time DB, Auth, RLS Policies, Storage & AI Engine
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsSupabaseConfigOpen(true)}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all"
+                >
+                  Open Migration & Diagnostics Inspector
+                </button>
+              </div>
+
+              <OpportunitiesModule
+                currentProfile={currentProfile}
+                onOpenSupabaseConfig={() => setIsSupabaseConfigOpen(true)}
+                onOpenMyApplications={() => setActiveTab('myApplications')}
+                onOpenSavedOpportunities={() => setActiveTab('savedOpportunities')}
+              />
+            </div>
+          )}
+
           {/* Running Footer */}
           <Footer />
         </main>
@@ -1202,66 +1384,28 @@ export function App() {
         onLogout={() => setCurrentLoggedInUser(null)}
       />
 
-      {/* Compulsory Registration Form Modal for Joined Members */}
-      {showCompulsoryFormModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-          <div className="bg-slate-900 border-2 border-amber-500/80 rounded-3xl max-w-lg w-full p-6 text-white shadow-2xl space-y-5 relative">
-            <button
-              onClick={() => setShowCompulsoryFormModal(false)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
-            >
-              ✕
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-2xl shrink-0">
-                <FileText className="w-7 h-7" />
-              </div>
-              <div>
-                <span className="px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/40">
-                  Compulsory Action Required
-                </span>
-                <h2 className="text-lg font-bold text-white mt-1">
-                  Official Google Registration Form
-                </h2>
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2 text-xs text-slate-300">
-              <p className="font-semibold text-amber-200">
-                Welcome to ISO Central Repository!
-              </p>
-              <p>
-                As a newly joined member, you must complete the official membership registration form on Google Forms to finalize your profile and record.
-              </p>
-              <div className="p-2.5 bg-slate-900 border border-slate-700 rounded-xl font-mono text-[11px] text-amber-400 break-all select-all">
-                https://forms.gle/7NiEiCtEr5BFsmkY8
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center gap-3">
-              <a
-                href="https://forms.gle/7NiEiCtEr5BFsmkY8"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setShowCompulsoryFormModal(false)}
-                className="w-full sm:flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition-all uppercase tracking-wider text-center"
-              >
-                <span>Open Google Form Now</span>
-                <ExternalLink className="w-4 h-4" />
-              </a>
-
-              <button
-                type="button"
-                onClick={() => setShowCompulsoryFormModal(false)}
-                className="w-full sm:w-auto px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all"
-              >
-                I Have Completed It
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Official Compulsory Google Registration Form Modal */}
+      {showCompulsoryFormModal && currentLoggedInUser && (
+        <CompulsoryGoogleFormGate
+          isModalMode={true}
+          user={currentLoggedInUser}
+          onFormCompleted={() => {
+            const key = currentLoggedInUser.email || currentLoggedInUser.mobileNumber || currentLoggedInUser.memberId || 'member';
+            try {
+              localStorage.setItem(`iso_google_form_completed_${key}`, 'true');
+            } catch {}
+            setHasCompletedGoogleForm(true);
+            setShowCompulsoryFormModal(false);
+          }}
+          onCloseModal={() => setShowCompulsoryFormModal(false)}
+        />
       )}
+
+      {/* Supabase Architecture & SQL Migration Modal */}
+      <SupabaseConfigModal
+        isOpen={isSupabaseConfigOpen}
+        onClose={() => setIsSupabaseConfigOpen(false)}
+      />
     </div>
   );
 }
