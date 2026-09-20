@@ -26,6 +26,7 @@ import {
   loadDatabaseFromServer,
   persistDatabaseToServer,
   scheduleDatabaseSync,
+  flushPendingSync,
   safeSetLocalStorage,
   safeGetLocalStorage,
   subscribeToDatabaseSync
@@ -314,69 +315,56 @@ export function App() {
         if (!isMounted) return;
 
         if (serverDb) {
-          // Merge server data with local records so no user entered records are lost
-          if (serverDb.members && serverDb.members.length > 0) {
-            setMembers((local) => {
-              const map = new Map<string, Member>();
-              serverDb.members!.forEach((m) => map.set(m.id, m));
-              local.forEach((m) => {
-                if (!map.has(m.id)) map.set(m.id, m);
-              });
-              return Array.from(map.values());
-            });
+          // Authoritative Server Database Hydration:
+          // Directly apply server records to state and localStorage.
+          // Never perform union merge with stale local state which causes deleted records to resurrect!
+          if (Array.isArray(serverDb.members)) {
+            setMembers(serverDb.members);
+            safeSetLocalStorage('iso_members', serverDb.members);
           }
 
-          if (serverDb.officeBearers && serverDb.officeBearers.length > 0) {
-            setOfficeBearers((local) => {
-              const map = new Map<string, OfficeBearer>();
-              serverDb.officeBearers!.forEach((ob) => map.set(ob.id, ob));
-              local.forEach((ob) => {
-                if (!map.has(ob.id)) map.set(ob.id, ob);
-              });
-              return Array.from(map.values());
-            });
+          if (Array.isArray(serverDb.officeBearers)) {
+            setOfficeBearers(serverDb.officeBearers);
+            safeSetLocalStorage('iso_office_bearers', serverDb.officeBearers);
           }
 
-          if (serverDb.admins && serverDb.admins.length > 0) {
-            setAdmins((local) => {
-              const map = new Map<string, AdminUser>();
-              serverDb.admins!.forEach((a) => map.set(a.id || a.email, a));
-              local.forEach((a) => {
-                const key = a.id || a.email;
-                if (!map.has(key)) map.set(key, a);
-              });
-              return Array.from(map.values());
-            });
+          if (Array.isArray(serverDb.admins)) {
+            setAdmins(serverDb.admins);
+            safeSetLocalStorage('iso_admins', serverDb.admins);
           }
 
-          if (serverDb.adminCredentials && serverDb.adminCredentials.length > 0) {
-            setAdminCredentials((local) => {
-              const map = new Map<string, AdminCredential>();
-              serverDb.adminCredentials!.forEach((c) => map.set(c.mobileNumber, c));
-              local.forEach((c) => {
-                if (!map.has(c.mobileNumber)) map.set(c.mobileNumber, c);
-              });
-              return Array.from(map.values());
-            });
+          if (Array.isArray(serverDb.adminCredentials)) {
+            setAdminCredentials(serverDb.adminCredentials);
+            safeSetLocalStorage('iso_admin_credentials', serverDb.adminCredentials);
           }
 
-          if (serverDb.designations && serverDb.designations.length > 0) {
+          if (Array.isArray(serverDb.designations)) {
             setDesignations(serverDb.designations);
+            safeSetLocalStorage('iso_designations', serverDb.designations);
           }
-          if (serverDb.documents && serverDb.documents.length > 0) {
+          if (Array.isArray(serverDb.documents)) {
             setDocuments(serverDb.documents);
+            safeSetLocalStorage('iso_documents', serverDb.documents);
           }
-          if (serverDb.events && serverDb.events.length > 0) {
+          if (Array.isArray(serverDb.events)) {
             setEvents(serverDb.events);
+            safeSetLocalStorage('iso_events', serverDb.events);
           }
-          if (serverDb.donations && serverDb.donations.length > 0) {
+          if (Array.isArray(serverDb.donations)) {
             setDonations(serverDb.donations);
+            safeSetLocalStorage('iso_donations', serverDb.donations);
           }
-          if (serverDb.auditLogs && serverDb.auditLogs.length > 0) {
+          if (Array.isArray(serverDb.auditLogs)) {
             setAuditLogs(serverDb.auditLogs);
+            safeSetLocalStorage('iso_audit_logs', serverDb.auditLogs);
+          }
+          if (Array.isArray(serverDb.registrationNotifications)) {
+            setRegistrationNotifications(serverDb.registrationNotifications);
+            safeSetLocalStorage('iso_registration_notifications', serverDb.registrationNotifications);
           }
           if (serverDb.superAdminPhoto) {
             setSuperAdminPhoto(serverDb.superAdminPhoto);
+            localStorage.setItem('iso_super_admin_photo', serverDb.superAdminPhoto);
           }
         } else {
           // If server file did not exist yet, persist initial state to initialize permanent storage
@@ -420,10 +408,26 @@ export function App() {
     logActivity('User Authentication', `${user.name} (${user.mobileNumber}) logged into system as ${user.role}`);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (currentLoggedInUser) {
       logActivity('User Logout', `${currentLoggedInUser.name} (${currentLoggedInUser.mobileNumber}) logged out.`);
     }
+    // Flush any pending updates and guarantee latest database snapshot is safely saved to server disk
+    await flushPendingSync();
+    await persistDatabaseToServer({
+      members,
+      officeBearers,
+      designations,
+      admins,
+      adminCredentials,
+      auditLogs,
+      documents,
+      events,
+      donations,
+      registrationNotifications,
+      superAdminPhoto
+    });
+
     signOutSupabase().catch((err) => console.warn('Notice signing out of Supabase:', err));
     localStorage.removeItem('iso_current_logged_in_user');
     setCurrentLoggedInUser(null);
@@ -581,64 +585,102 @@ export function App() {
 
   // Member Handlers
   const handleAddMember = (m: Member) => {
-    setMembers((prev) => [m, ...prev]);
+    setMembers((prev) => {
+      const updated = [m, ...prev.filter((item) => item.id !== m.id)];
+      safeSetLocalStorage('iso_members', updated);
+      persistDatabaseToServer({ members: updated });
+      return updated;
+    });
     logActivity('Member Added', `Registered new member ${m.fullName} (${m.id}) in ${m.city}, ${m.district}`);
   };
 
   const handleEditMember = (m: Member) => {
-    setMembers((prev) => prev.map((item) => (item.id === m.id ? m : item)));
+    setMembers((prev) => {
+      const updated = prev.map((item) => (item.id === m.id ? m : item));
+      safeSetLocalStorage('iso_members', updated);
+      persistDatabaseToServer({ members: updated });
+      return updated;
+    });
     logActivity('Member Updated', `Modified record for ${m.fullName} (${m.id})`);
   };
 
   const handleDeleteMember = (id: string) => {
     const target = members.find((m) => m.id === id);
-    setMembers((prev) => prev.filter((m) => m.id !== id));
+    setMembers((prev) => {
+      const updated = prev.filter((m) => m.id !== id);
+      safeSetLocalStorage('iso_members', updated);
+      persistDatabaseToServer({ members: updated });
+      return updated;
+    });
     logActivity('Member Deleted', `Removed record ${target?.fullName || id}`);
   };
 
   // Office Bearer Handlers
   const handleAddOfficeBearer = (b: OfficeBearer) => {
-    setOfficeBearers((prev) => [b, ...prev]);
+    setOfficeBearers((prev) => {
+      const updated = [b, ...prev.filter((o) => o.id !== b.id)];
+      safeSetLocalStorage('iso_office_bearers', updated);
+      persistDatabaseToServer({ officeBearers: updated });
+      return updated;
+    });
     logActivity('Office Bearer Appointed', `Appointed ${b.name} as ${b.designation}`);
   };
 
   const handleEditOfficeBearer = (b: OfficeBearer) => {
-    setOfficeBearers((prev) => prev.map((item) => (item.id === b.id ? b : item)));
+    setOfficeBearers((prev) => {
+      const updated = prev.map((item) => (item.id === b.id ? b : item));
+      safeSetLocalStorage('iso_office_bearers', updated);
+      persistDatabaseToServer({ officeBearers: updated });
+      return updated;
+    });
     logActivity('Office Bearer Updated', `Updated appointment details for ${b.name} (${b.designation})`);
   };
 
   const handleDeleteOfficeBearer = (id: string) => {
     const target = officeBearers.find((o) => o.id === id);
-    setOfficeBearers((prev) => prev.filter((o) => o.id !== id));
+    setOfficeBearers((prev) => {
+      const updated = prev.filter((o) => o.id !== id);
+      safeSetLocalStorage('iso_office_bearers', updated);
+      persistDatabaseToServer({ officeBearers: updated });
+      return updated;
+    });
     logActivity('Office Bearer Removed', `Vacated appointment for ${target?.name || id}`);
   };
 
   // Designation Handlers
   const handleAddDesignation = (d: Designation) => {
-    setDesignations((prev) => [...prev, d]);
+    setDesignations((prev) => {
+      const updated = [...prev, d];
+      safeSetLocalStorage('iso_designations', updated);
+      persistDatabaseToServer({ designations: updated });
+      return updated;
+    });
     logActivity('Designation Created', `Added custom designation ${d.title} (${d.level} Tier)`);
   };
 
   const handleDeleteDesignation = (id: string) => {
     const target = designations.find((d) => d.id === id);
-    setDesignations((prev) => prev.filter((d) => d.id !== id));
+    setDesignations((prev) => {
+      const updated = prev.filter((d) => d.id !== id);
+      safeSetLocalStorage('iso_designations', updated);
+      persistDatabaseToServer({ designations: updated });
+      return updated;
+    });
     logActivity('Designation Removed', `Deleted custom designation ${target?.title || id}`);
   };
 
   // Admin Handlers
   const handleAddAdmin = (adm: AdminUser) => {
-    let updatedAdmins: AdminUser[] = [];
+    let updatedAdminsList: AdminUser[] = [];
     setAdmins((prev) => {
       const exists = prev.some((a) => a.id === adm.id || (a.email && a.email.toLowerCase() === adm.email.toLowerCase()));
-      if (exists) {
-        updatedAdmins = prev.map((a) => (a.id === adm.id || (a.email && a.email.toLowerCase() === adm.email.toLowerCase()) ? adm : a));
-      } else {
-        updatedAdmins = [...prev, adm];
-      }
-      return updatedAdmins;
+      updatedAdminsList = exists
+        ? prev.map((a) => (a.id === adm.id || (a.email && a.email.toLowerCase() === adm.email.toLowerCase()) ? adm : a))
+        : [...prev, adm];
+      safeSetLocalStorage('iso_admins', updatedAdminsList);
+      return updatedAdminsList;
     });
 
-    // Auto-create/sync credentials so the newly created admin can log in via mobile password OR email OTP!
     const cleanMobile = adm.phone?.trim() || '';
     const newCred: AdminCredential = {
       mobileNumber: cleanMobile || '0300' + Math.floor(1000000 + Math.random() * 9000000),
@@ -652,7 +694,7 @@ export function App() {
       memberId: adm.id
     };
 
-    let updatedCreds: AdminCredential[] = [];
+    let updatedCredsList: AdminCredential[] = [];
     setAdminCredentials((prev) => {
       const filtered = prev.filter(
         (c) =>
@@ -660,31 +702,31 @@ export function App() {
           (!adm.email || c.email?.toLowerCase() !== adm.email.toLowerCase()) &&
           (c.memberId !== adm.id)
       );
-      updatedCreds = [newCred, ...filtered];
-      return updatedCreds;
+      updatedCredsList = [newCred, ...filtered];
+      safeSetLocalStorage('iso_admin_credentials', updatedCredsList);
+      return updatedCredsList;
+    });
+
+    // Immediate permanent server database save
+    persistDatabaseToServer({
+      admins: updatedAdminsList,
+      adminCredentials: updatedCredsList
     });
 
     logActivity('Admin Created', `Granted admin access to ${adm.name} (${adm.designation})`);
-
-    // Immediate permanent server database save
-    setTimeout(() => {
-      persistDatabaseToServer({
-        admins: updatedAdmins.length > 0 ? updatedAdmins : undefined,
-        adminCredentials: updatedCreds.length > 0 ? updatedCreds : undefined
-      });
-    }, 100);
   };
 
   const handleEditAdmin = (adm: AdminUser) => {
-    let updatedAdmins: AdminUser[] = [];
+    let updatedAdminsList: AdminUser[] = [];
     setAdmins((prev) => {
-      updatedAdmins = prev.map((item) => (item.id === adm.id ? adm : item));
-      return updatedAdmins;
+      updatedAdminsList = prev.map((item) => (item.id === adm.id ? adm : item));
+      safeSetLocalStorage('iso_admins', updatedAdminsList);
+      return updatedAdminsList;
     });
 
-    let updatedCreds: AdminCredential[] = [];
+    let updatedCredsList: AdminCredential[] = [];
     setAdminCredentials((prev) => {
-      updatedCreds = prev.map((c) => {
+      updatedCredsList = prev.map((c) => {
         if (
           (adm.phone && c.mobileNumber === adm.phone.trim()) ||
           (adm.email && c.email?.toLowerCase() === adm.email.trim().toLowerCase()) ||
@@ -702,50 +744,49 @@ export function App() {
         }
         return c;
       });
-      return updatedCreds;
+      safeSetLocalStorage('iso_admin_credentials', updatedCredsList);
+      return updatedCredsList;
+    });
+
+    // Immediate permanent server database save
+    persistDatabaseToServer({
+      admins: updatedAdminsList,
+      adminCredentials: updatedCredsList
     });
 
     logActivity('Admin Permissions Modified', `Updated RBAC rights for admin ${adm.name}`);
-
-    // Immediate permanent server database save
-    setTimeout(() => {
-      persistDatabaseToServer({
-        admins: updatedAdmins,
-        adminCredentials: updatedCreds
-      });
-    }, 100);
   };
 
   const handleDeleteAdmin = (id: string) => {
     const target = admins.find((a) => a.id === id);
-    let updatedAdmins: AdminUser[] = [];
+    let updatedAdminsList: AdminUser[] = [];
     setAdmins((prev) => {
-      updatedAdmins = prev.filter((a) => a.id !== id);
-      return updatedAdmins;
+      updatedAdminsList = prev.filter((a) => a.id !== id);
+      safeSetLocalStorage('iso_admins', updatedAdminsList);
+      return updatedAdminsList;
     });
 
-    let updatedCreds: AdminCredential[] = [];
-    if (target) {
-      setAdminCredentials((prev) => {
-        updatedCreds = prev.filter(
-          (c) =>
-            c.memberId !== id &&
-            (!target.phone || c.mobileNumber !== target.phone.trim()) &&
-            (!target.email || c.email?.toLowerCase() !== target.email.trim().toLowerCase())
-        );
-        return updatedCreds;
-      });
-    }
-
-    logActivity('Admin Removed', `Revoked admin permissions for ${target?.name || id}`);
+    let updatedCredsList: AdminCredential[] = [];
+    setAdminCredentials((prev) => {
+      updatedCredsList = target
+        ? prev.filter(
+            (c) =>
+              c.memberId !== id &&
+              (!target.phone || c.mobileNumber !== target.phone.trim()) &&
+              (!target.email || c.email?.toLowerCase() !== target.email.trim().toLowerCase())
+          )
+        : prev.filter((c) => c.memberId !== id);
+      safeSetLocalStorage('iso_admin_credentials', updatedCredsList);
+      return updatedCredsList;
+    });
 
     // Immediate permanent server database save
-    setTimeout(() => {
-      persistDatabaseToServer({
-        admins: updatedAdmins,
-        adminCredentials: updatedCreds.length > 0 ? updatedCreds : undefined
-      });
-    }, 100);
+    persistDatabaseToServer({
+      admins: updatedAdminsList,
+      adminCredentials: updatedCredsList
+    });
+
+    logActivity('Admin Removed', `Revoked admin permissions for ${target?.name || id}`);
   };
 
   const handleDeleteDocument = (id: string) => {

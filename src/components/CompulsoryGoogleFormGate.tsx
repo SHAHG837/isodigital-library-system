@@ -23,6 +23,7 @@ import {
   Lock
 } from 'lucide-react';
 import { AdminCredential, Member } from '../types';
+import { persistDatabaseToServer, safeSetLocalStorage } from '../services/databaseService';
 
 export const OFFICIAL_GOOGLE_FORM_URL = 'https://forms.gle/kssywCw3z7WWd3516';
 export const OFFICIAL_GOOGLE_FORM_EDIT_URL = 'https://forms.gle/kssywCw3z7WWd3516';
@@ -166,7 +167,8 @@ export const CompulsoryGoogleFormGate: React.FC<CompulsoryGoogleFormGateProps> =
             province: formData.province || current.province || 'Sindh',
             notes: `Father: ${formData.fatherName} | CNIC: ${formData.cnic} | WhatsApp: ${formData.whatsappNumber} | Province: ${formData.province} | Unit: ${formData.isoUnit} | Edu: ${formData.qualification} | Prof: ${formData.profession} | Blood: ${formData.bloodGroup || 'N/A'} | Shajra: ${formData.shajraBranch} | ${current.notes || ''}`
           };
-          localStorage.setItem('iso_members', JSON.stringify(membersList));
+          safeSetLocalStorage('iso_members', membersList);
+          persistDatabaseToServer({ members: membersList });
         }
       }
     } catch (err) {

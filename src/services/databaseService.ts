@@ -124,8 +124,12 @@ export async function persistDatabaseToServer(snapshot: IsoDatabaseSnapshot): Pr
 /**
  * Debounced background synchronization for frequent state changes
  */
-export function scheduleDatabaseSync(snapshot: IsoDatabaseSnapshot, delayMs: number = 400) {
-  pendingSnapshot = snapshot;
+export function scheduleDatabaseSync(snapshot: IsoDatabaseSnapshot, delayMs: number = 300) {
+  pendingSnapshot = {
+    ...(pendingSnapshot || {}),
+    ...snapshot
+  };
+
   if (syncTimeout) {
     clearTimeout(syncTimeout);
   }
@@ -137,6 +141,22 @@ export function scheduleDatabaseSync(snapshot: IsoDatabaseSnapshot, delayMs: num
       await persistDatabaseToServer(toSend);
     }
   }, delayMs);
+}
+
+/**
+ * Immediately flush any pending debounced database sync to disk
+ */
+export async function flushPendingSync(): Promise<boolean> {
+  if (syncTimeout) {
+    clearTimeout(syncTimeout);
+    syncTimeout = null;
+  }
+  if (pendingSnapshot) {
+    const toSend = { ...pendingSnapshot };
+    pendingSnapshot = null;
+    return await persistDatabaseToServer(toSend);
+  }
+  return true;
 }
 
 /**
