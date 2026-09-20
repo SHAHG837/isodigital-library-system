@@ -24,8 +24,8 @@ import {
 } from 'lucide-react';
 import { AdminCredential, Member } from '../types';
 
-export const OFFICIAL_GOOGLE_FORM_EDIT_URL = 'https://docs.google.com/forms/d/1eVTnVJ-nqdm6pi-hvyczit_E-xzb75NLuNJZAbFtb3s/edit';
-export const OFFICIAL_GOOGLE_FORM_URL = 'https://docs.google.com/forms/d/1eVTnVJ-nqdm6pi-hvyczit_E-xzb75NLuNJZAbFtb3s/viewform';
+export const OFFICIAL_GOOGLE_FORM_URL = 'https://forms.gle/kssywCw3z7WWd3516';
+export const OFFICIAL_GOOGLE_FORM_EDIT_URL = 'https://forms.gle/kssywCw3z7WWd3516';
 
 interface CompulsoryGoogleFormGateProps {
   user: AdminCredential;

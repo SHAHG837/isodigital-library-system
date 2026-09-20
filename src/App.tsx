@@ -41,6 +41,7 @@ import { SuperAdminModule } from './components/SuperAdminModule';
 import { AdminRbacModule } from './components/AdminRbacModule';
 import { GlobalSearchModule } from './components/GlobalSearchModule';
 import { ShajraModule } from './components/ShajraModule';
+import { ShajraReferenceBooksModule } from './components/ShajraReferenceBooksModule';
 import { MembershipCardModule } from './components/MembershipCardModule';
 import { ExportImportModule } from './components/ExportImportModule';
 import { GoogleSheetsModule } from './components/GoogleSheetsModule';
@@ -1072,8 +1073,9 @@ export function App() {
   const isAdminOrManager = isSuperAdmin || currentLoggedInUser?.role === 'Admin' || currentLoggedInUser?.role === 'Manager';
   const isRegularMember = Boolean(currentLoggedInUser && !isAdminOrManager);
 
-  // Compulsory Google Form Gate: New members must fill every compulsory detail before entering landing page
-  if (isRegularMember && !hasCompletedGoogleForm) {
+  // Compulsory Google Form Gate: Any member logging in who has not completed the compulsory form must fill every compulsory detail before entering landing page
+  const mustCompleteForm = Boolean(currentLoggedInUser && !isSuperAdmin && !hasCompletedGoogleForm);
+  if (mustCompleteForm) {
     return (
       <CompulsoryGoogleFormGate
         user={currentLoggedInUser}
@@ -1257,6 +1259,14 @@ export function App() {
 
           {effectiveActiveTab === 'shajra' && (
             <ShajraModule
+              currentLoggedInUser={currentLoggedInUser}
+              members={members}
+              onLogActivity={logActivity}
+            />
+          )}
+
+          {effectiveActiveTab === 'shajraAuth' && (
+            <ShajraReferenceBooksModule
               currentLoggedInUser={currentLoggedInUser}
               members={members}
               onLogActivity={logActivity}

@@ -19,8 +19,11 @@ import {
   Phone,
   Award,
   Layers,
-  Info
+  Info,
+  BookOpen,
+  BookMarked
 } from 'lucide-react';
+import { ShajraReferenceBooksModule } from './ShajraReferenceBooksModule';
 
 export interface ShajraNode {
   id: string;
@@ -38,6 +41,7 @@ interface ShajraModuleProps {
   currentLoggedInUser?: AdminCredential | null;
   members?: Member[];
   onLogActivity?: (action: string, details: string) => void;
+  initialAdminView?: boolean;
 }
 
 const defaultShajraData: ShajraNode = {
@@ -328,8 +332,11 @@ const flattenTree = (node: ShajraNode, list: ShajraNode[] = []): ShajraNode[] =>
 export const ShajraModule: React.FC<ShajraModuleProps> = ({
   currentLoggedInUser,
   members = [],
-  onLogActivity
+  onLogActivity,
+  initialAdminView = false
 }) => {
+  const [activeTabMode, setActiveTabMode] = useState<'tree' | 'referenceBooks'>(initialAdminView ? 'referenceBooks' : 'tree');
+
   // Load tree from local storage or default
   const [shajraData, setShajraData] = useState<ShajraNode>(() => {
     const saved = localStorage.getItem('iso_shajra_tree');
@@ -622,8 +629,49 @@ export const ShajraModule: React.FC<ShajraModuleProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+      {/* Admin Sub-navigation Tab Bar - ONLY visible to Admin/SuperAdmin */}
+      {isAdminOrManager && (
+        <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-900/90 rounded-2xl border border-slate-200/80 dark:border-slate-800 w-fit">
+          <button
+            onClick={() => setActiveTabMode('tree')}
+            className={`px-4 py-2 text-xs font-bold rounded-xl flex items-center gap-2 transition-all ${
+              activeTabMode === 'tree'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <GitBranch className="w-4 h-4" />
+            Shajra Genealogy Tree
+          </button>
+          <button
+            onClick={() => setActiveTabMode('referenceBooks')}
+            className={`px-4 py-2 text-xs font-bold rounded-xl flex items-center gap-2 transition-all ${
+              activeTabMode === 'referenceBooks'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <BookOpen className="w-4 h-4 text-amber-400" />
+            <span>Reference Books & AI Verification</span>
+            <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-[10px] font-black rounded-md border border-amber-500/30">
+              Admin Only 🔒
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* When Admin is on Reference Books tab */}
+      {isAdminOrManager && activeTabMode === 'referenceBooks' ? (
+        <ShajraReferenceBooksModule
+          currentLoggedInUser={currentLoggedInUser}
+          members={members}
+          shajraNodes={allNodesList}
+          onLogActivity={onLogActivity}
+        />
+      ) : (
+        <>
+          {/* Header Banner */}
+          <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 rounded-2xl">
@@ -808,6 +856,16 @@ export const ShajraModule: React.FC<ShajraModuleProps> = ({
 
               {isAdminOrManager && (
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setActiveTabMode('referenceBooks');
+                      setPreviewNode(null);
+                    }}
+                    className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-purple-600/20"
+                    title="Cross-reference this lineage with reference books"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Verify with AI Books
+                  </button>
                   <button
                     onClick={() => {
                       const nodeToEdit = previewNode;
@@ -1115,6 +1173,8 @@ export const ShajraModule: React.FC<ShajraModuleProps> = ({
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

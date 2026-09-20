@@ -177,12 +177,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <p className="text-xs text-amber-200/80 font-mono text-[11px] break-all">
               Official Form Link:{' '}
               <a
-                href="https://docs.google.com/forms/d/1eVTnVJ-nqdm6pi-hvyczit_E-xzb75NLuNJZAbFtb3s/edit"
+                href="https://forms.gle/kssywCw3z7WWd3516"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline font-bold text-amber-300 hover:text-white"
               >
-                https://docs.google.com/forms/d/1eVTnVJ-nqdm6pi-hvyczit_E-xzb75NLuNJZAbFtb3s/edit
+                https://forms.gle/kssywCw3z7WWd3516
               </a>
             </p>
           </div>
@@ -198,7 +198,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </button>
           )}
           <a
-            href="https://docs.google.com/forms/d/1eVTnVJ-nqdm6pi-hvyczit_E-xzb75NLuNJZAbFtb3s/edit"
+            href="https://forms.gle/kssywCw3z7WWd3516"
             target="_blank"
             rel="noopener noreferrer"
             className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2 transition-all uppercase tracking-wider"

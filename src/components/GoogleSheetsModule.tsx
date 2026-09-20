@@ -453,13 +453,13 @@ export const GoogleSheetsModule: React.FC<GoogleSheetsModuleProps> = ({
               Forms submissions populate directly into your Google Sheets. Open form link or sync response sheet below:
             </p>
             <p className="text-[11px] font-mono text-amber-300 underline mt-0.5">
-              https://docs.google.com/forms/d/1eVTnVJ-nqdm6pi-hvyczit_E-xzb75NLuNJZAbFtb3s/edit
+              https://forms.gle/kssywCw3z7WWd3516
             </p>
           </div>
         </div>
 
         <a
-          href="https://docs.google.com/forms/d/1eVTnVJ-nqdm6pi-hvyczit_E-xzb75NLuNJZAbFtb3s/edit"
+          href="https://forms.gle/kssywCw3z7WWd3516"
           target="_blank"
           rel="noopener noreferrer"
           className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-2 transition-colors shrink-0"

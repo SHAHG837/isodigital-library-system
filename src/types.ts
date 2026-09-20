@@ -16,17 +16,6 @@ export interface Member {
   oathSubmitted?: boolean;
   oathDate?: string;
   status: 'Approved' | 'Pending' | 'Rejected' | 'Active' | 'Inactive';
-  forefathers?: MemberForefathers;
-}
-
-export interface MemberForefathers {
-  forefather1: string; // 1st Forefather: Father (والد محترم)
-  forefather2: string; // 2nd Forefather: Grandfather (دادا محترم)
-  forefather3: string; // 3rd Forefather: Great-Grandfather (پردادا محترم)
-  forefather4: string; // 4th Forefather: 4th Ancestor (چوتھی پشت / لکڑدادا)
-  forefather5: string; // 5th Forefather: 5th Ancestor (پانچویں پشت کے بزرگ)
-  forefather6: string; // 6th Forefather: 6th Ancestor (چھٹی پشت کے بزرگ)
-  forefather7: string; // 7th Forefather: 7th Ancestor (ساتویں پشت کے بزرگ)
 }
 
 export interface OfficeBearer {
@@ -159,6 +148,57 @@ export interface AttendanceRecord {
   timestamp: string;
 }
 
+export interface ShajraReferenceBook {
+  id: string;
+  title: string;
+  author: string;
+  branchCoverage: string[];
+  eraCentury?: string;
+  language: 'Arabic' | 'Persian' | 'Urdu' | 'English';
+  pdfFileName: string;
+  fileSizeFormatted: string;
+  pdfDataUrl?: string;
+  totalPages?: number;
+  description: string;
+  uploadedAt: string;
+  uploadedBy: string;
+  isAiTrained: boolean;
+  trainedAt?: string;
+  extractedKnowledgeSnippet?: string;
+}
+
+export interface ShajraAiVerificationRequest {
+  candidateName: string;
+  fatherName: string;
+  claimedBranch: string;
+  lineageChainText: string;
+  memberId?: string;
+  selectedBookIds?: string[];
+  additionalNotes?: string;
+}
+
+export interface ShajraAiVerificationResult {
+  status: 'AUTHENTICATED' | 'VERIFIED_WITH_RESERVATIONS' | 'DISCREPANCY_DETECTED' | 'INSUFFICIENT_EVIDENCE';
+  confidenceScore: number;
+  summary: string;
+  branchAnalysis: string;
+  citedReferenceBooks: {
+    bookTitle: string;
+    author: string;
+    relevantCitation: string;
+  }[];
+  chainValidationSteps: {
+    generation: number;
+    ancestorName: string;
+    relation: string;
+    status: 'Confirmed in Reference Texts' | 'Likely Historic Link' | 'Unverified Link' | 'Discrepancy';
+    notes: string;
+  }[];
+  historicalContext: string;
+  recommendationsForAdmin: string[];
+  verifiedAt: string;
+}
+
 export interface HierarchyNode {
   id: string;
   name: string;
@@ -186,6 +226,7 @@ export type ActiveTab =
   | 'exportImport'
   | 'googleSheets'
   | 'shajra'
+  | 'shajraAuth'
   | 'documents'
   | 'membershipCard'
   | 'qrGenerator'

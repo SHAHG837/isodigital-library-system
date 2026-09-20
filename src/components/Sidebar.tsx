@@ -27,7 +27,8 @@ import {
   Briefcase,
   FileCheck2,
   Bookmark,
-  Sparkles
+  Sparkles,
+  BookMarked
 } from 'lucide-react';
 import { ActiveTab, AdminCredential } from '../types';
 import { SUPER_ADMIN_INFO } from '../data/initialData';
@@ -102,6 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'events' as ActiveTab, label: 'Events & Conventions', icon: Calendar },
         { id: 'aiAssistant' as ActiveTab, label: 'AI Search Assistant', icon: Bot, badge: 'Gemini' },
         ...(!isRegularMember ? [
+          { id: 'shajraAuth' as ActiveTab, label: 'Shajra Reference Books (AI)', icon: BookMarked, badge: 'Admin' },
           { id: 'documents' as ActiveTab, label: 'Digital Documents', icon: FileText },
           { id: 'qrGenerator' as ActiveTab, label: 'QR Generator', icon: QrCode },
           { id: 'donations' as ActiveTab, label: 'Donation Ledger', icon: Wallet },
