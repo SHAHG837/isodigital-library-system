@@ -10,6 +10,16 @@ import {
   DonationRecord,
   RegistrationNotification
 } from '../types';
+import {
+  fetchMasterDatabaseFromFirestore,
+  fetchOfficeBearersFromFirestore,
+  fetchDesignationsFromFirestore,
+  saveMasterDatabaseToFirestore,
+  saveOfficeBearerToFirestore,
+  deleteOfficeBearerFromFirestore,
+  saveDesignationToFirestore,
+  deleteDesignationFromFirestore
+} from '../lib/firestoreDb';
 
 export interface IsoDatabaseSnapshot {
   members?: Member[];
@@ -65,9 +75,20 @@ export function subscribeToDatabaseSync(callback: SyncStatusCallback): () => voi
 }
 
 /**
- * Load the complete permanent database from server disk
+ * Load the complete permanent database from Firestore cloud DB and server disk
  */
 export async function loadDatabaseFromServer(): Promise<IsoDatabaseSnapshot | null> {
+  let cloudSnapshot: IsoDatabaseSnapshot | null = null;
+  let serverSnapshot: IsoDatabaseSnapshot | null = null;
+
+  // 1. Fetch from Firestore Cloud Database
+  try {
+    cloudSnapshot = await fetchMasterDatabaseFromFirestore();
+  } catch (e: any) {
+    console.warn('[DATABASE SERVICE] Notice reading Firestore snapshot:', e?.message);
+  }
+
+  // 2. Fetch from Express Server File
   try {
     const res = await fetch('/api/database', {
       headers: { 'Accept': 'application/json' }
@@ -75,26 +96,89 @@ export async function loadDatabaseFromServer(): Promise<IsoDatabaseSnapshot | nu
     if (res.ok) {
       const json = await res.json();
       if (json.success && json.exists && json.data) {
-        lastSavedTimestamp = json.data.updatedAt || new Date().toISOString();
-        notifyListeners();
-        return json.data as IsoDatabaseSnapshot;
+        serverSnapshot = json.data as IsoDatabaseSnapshot;
       }
     }
-    return null;
   } catch (err: any) {
-    console.warn('[DATABASE SERVICE] Unable to connect to server database, will use local storage fallback:', err?.message);
-    return null;
+    console.warn('[DATABASE SERVICE] Unable to connect to server database file:', err?.message);
   }
+
+  // Merge datasets, prioritizing the most recently updated snapshot
+  if (cloudSnapshot && serverSnapshot) {
+    const cloudTime = cloudSnapshot.updatedAt ? new Date(cloudSnapshot.updatedAt).getTime() : 0;
+    const serverTime = serverSnapshot.updatedAt ? new Date(serverSnapshot.updatedAt).getTime() : 0;
+    
+    // Merge both snapshots with newer taking precedence
+    const primary = cloudTime >= serverTime ? cloudSnapshot : serverSnapshot;
+    const secondary = cloudTime >= serverTime ? serverSnapshot : cloudSnapshot;
+    
+    const merged: IsoDatabaseSnapshot = {
+      ...secondary,
+      ...primary,
+      // Authoritative array selection: If primary has the array, use it directly (even if emptied or filtered)
+      officeBearers: Array.isArray(primary.officeBearers)
+        ? primary.officeBearers
+        : (Array.isArray(secondary.officeBearers) ? secondary.officeBearers : []),
+      designations: Array.isArray(primary.designations)
+        ? primary.designations
+        : (Array.isArray(secondary.designations) ? secondary.designations : []),
+      members: Array.isArray(primary.members)
+        ? primary.members
+        : (Array.isArray(secondary.members) ? secondary.members : []),
+      updatedAt: primary.updatedAt || secondary.updatedAt || new Date().toISOString()
+    };
+
+    lastSavedTimestamp = merged.updatedAt || new Date().toISOString();
+    notifyListeners();
+
+    // If cloud and server disk differed in freshness, back-sync to keep both in 100% identical alignment
+    if (Math.abs(cloudTime - serverTime) > 1000) {
+      persistDatabaseToServer(merged).catch((e) => console.warn('[DATABASE SERVICE] Auto-alignment sync notice:', e));
+    }
+
+    return merged;
+  }
+
+  const result = cloudSnapshot || serverSnapshot;
+  if (result) {
+    lastSavedTimestamp = result.updatedAt || new Date().toISOString();
+    notifyListeners();
+    return result;
+  }
+
+  return null;
 }
 
 /**
- * Persist database snapshot to server disk immediately
+ * Persist database snapshot to Firestore Cloud DB and server disk immediately
  */
 export async function persistDatabaseToServer(snapshot: IsoDatabaseSnapshot): Promise<boolean> {
   isSyncing = true;
   lastSyncError = null;
   notifyListeners();
 
+  let cloudSuccess = false;
+  let serverSuccess = false;
+
+  // 1. Save to Firestore Cloud Database
+  try {
+    cloudSuccess = await saveMasterDatabaseToFirestore(snapshot);
+    // Also update individual Firestore documents if officeBearers or designations changed
+    if (Array.isArray(snapshot.officeBearers)) {
+      snapshot.officeBearers.forEach((b) => {
+        saveOfficeBearerToFirestore(b).catch((e) => console.warn('Firestore single OB save warning:', e));
+      });
+    }
+    if (Array.isArray(snapshot.designations)) {
+      snapshot.designations.forEach((d) => {
+        saveDesignationToFirestore(d).catch((e) => console.warn('Firestore single Desg save warning:', e));
+      });
+    }
+  } catch (err: any) {
+    console.warn('[DATABASE SERVICE] Firestore cloud persist notice:', err?.message);
+  }
+
+  // 2. Save to Express server disk endpoint
   try {
     const res = await fetch('/api/database/save', {
       method: 'POST',
@@ -103,18 +187,22 @@ export async function persistDatabaseToServer(snapshot: IsoDatabaseSnapshot): Pr
     });
 
     if (res.ok) {
-      const data = await res.json();
-      lastSavedTimestamp = data.savedAt || new Date().toISOString();
-      isSyncing = false;
-      notifyListeners();
-      return true;
+      serverSuccess = true;
     } else {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.error || 'Server error saving database');
+      console.warn('[DATABASE SERVICE] Server file save non-200 status');
     }
   } catch (err: any) {
-    console.error('[DATABASE SERVICE] Failed to persist database to server:', err?.message);
-    lastSyncError = err?.message || 'Connection error while saving to server.';
+    console.warn('[DATABASE SERVICE] Server file save connection error:', err?.message);
+  }
+
+  const success = cloudSuccess || serverSuccess;
+  if (success) {
+    lastSavedTimestamp = new Date().toISOString();
+    isSyncing = false;
+    notifyListeners();
+    return true;
+  } else {
+    lastSyncError = 'Could not sync changes to cloud database or server disk.';
     isSyncing = false;
     notifyListeners();
     return false;

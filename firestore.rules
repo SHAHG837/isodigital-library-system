@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Master catch-all
+    match /{document=**} {
+      allow read, write: if true;
+    }
+
+    match /office_bearers/{bearerId} {
+      allow read, write: if true;
+    }
+
+    match /designations/{designationId} {
+      allow read, write: if true;
+    }
+
+    match /members/{memberId} {
+      allow read, write: if true;
+    }
+
+    match /system_state/{stateId} {
+      allow read, write: if true;
+    }
+  }
+}

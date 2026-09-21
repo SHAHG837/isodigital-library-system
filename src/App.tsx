@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Member,
   OfficeBearer,
@@ -31,6 +31,13 @@ import {
   safeGetLocalStorage,
   subscribeToDatabaseSync
 } from './services/databaseService';
+import {
+  saveOfficeBearerToFirestore,
+  deleteOfficeBearerFromFirestore,
+  saveDesignationToFirestore,
+  deleteDesignationFromFirestore,
+  saveMemberToFirestore
+} from './lib/firestoreDb';
 
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -235,6 +242,22 @@ export function App() {
     return null;
   });
 
+  // Active State Refs - Guarantees handlers and logout always access the freshest data without stale closures
+  const officeBearersRef = useRef(officeBearers);
+  officeBearersRef.current = officeBearers;
+
+  const designationsRef = useRef(designations);
+  designationsRef.current = designations;
+
+  const membersRef = useRef(members);
+  membersRef.current = members;
+
+  const adminsRef = useRef(admins);
+  adminsRef.current = admins;
+
+  const adminCredentialsRef = useRef(adminCredentials);
+  adminCredentialsRef.current = adminCredentials;
+
   // Permanent Server Database Synchronization State
   const [serverSyncStatus, setServerSyncStatus] = useState<{
     syncing: boolean;
@@ -316,30 +339,35 @@ export function App() {
 
         if (serverDb) {
           // Authoritative Server Database Hydration:
-          // Directly apply server records to state and localStorage.
+          // Directly apply server records to state, active refs, and localStorage.
           // Never perform union merge with stale local state which causes deleted records to resurrect!
           if (Array.isArray(serverDb.members)) {
             setMembers(serverDb.members);
+            membersRef.current = serverDb.members;
             safeSetLocalStorage('iso_members', serverDb.members);
           }
 
           if (Array.isArray(serverDb.officeBearers)) {
             setOfficeBearers(serverDb.officeBearers);
+            officeBearersRef.current = serverDb.officeBearers;
             safeSetLocalStorage('iso_office_bearers', serverDb.officeBearers);
           }
 
           if (Array.isArray(serverDb.admins)) {
             setAdmins(serverDb.admins);
+            adminsRef.current = serverDb.admins;
             safeSetLocalStorage('iso_admins', serverDb.admins);
           }
 
           if (Array.isArray(serverDb.adminCredentials)) {
             setAdminCredentials(serverDb.adminCredentials);
+            adminCredentialsRef.current = serverDb.adminCredentials;
             safeSetLocalStorage('iso_admin_credentials', serverDb.adminCredentials);
           }
 
           if (Array.isArray(serverDb.designations)) {
             setDesignations(serverDb.designations);
+            designationsRef.current = serverDb.designations;
             safeSetLocalStorage('iso_designations', serverDb.designations);
           }
           if (Array.isArray(serverDb.documents)) {
@@ -400,26 +428,60 @@ export function App() {
   // Welcome Note State
   const [welcomeNote, setWelcomeNote] = useState<string | null>(null);
 
-  const handleLoginSuccess = (user: AdminCredential, message?: string) => {
+  const handleLoginSuccess = async (user: AdminCredential, message?: string) => {
     setCurrentLoggedInUser(user);
     safeSetLocalStorage('iso_current_logged_in_user', user);
     const note = message || `Welcome back, ${user.name}! Authenticated as ${user.designation} (${user.role}).`;
     setWelcomeNote(note);
     logActivity('User Authentication', `${user.name} (${user.mobileNumber}) logged into system as ${user.role}`);
+
+    // Re-sync freshest data from cloud database (Firestore) & server disk upon login
+    try {
+      const serverDb = await loadDatabaseFromServer();
+      if (serverDb) {
+        if (Array.isArray(serverDb.officeBearers)) {
+          setOfficeBearers(serverDb.officeBearers);
+          officeBearersRef.current = serverDb.officeBearers;
+          safeSetLocalStorage('iso_office_bearers', serverDb.officeBearers);
+        }
+        if (Array.isArray(serverDb.designations)) {
+          setDesignations(serverDb.designations);
+          designationsRef.current = serverDb.designations;
+          safeSetLocalStorage('iso_designations', serverDb.designations);
+        }
+        if (Array.isArray(serverDb.members)) {
+          setMembers(serverDb.members);
+          membersRef.current = serverDb.members;
+          safeSetLocalStorage('iso_members', serverDb.members);
+        }
+        if (Array.isArray(serverDb.admins)) {
+          setAdmins(serverDb.admins);
+          adminsRef.current = serverDb.admins;
+          safeSetLocalStorage('iso_admins', serverDb.admins);
+        }
+        if (Array.isArray(serverDb.adminCredentials)) {
+          setAdminCredentials(serverDb.adminCredentials);
+          adminCredentialsRef.current = serverDb.adminCredentials;
+          safeSetLocalStorage('iso_admin_credentials', serverDb.adminCredentials);
+        }
+      }
+    } catch (e) {
+      console.warn('Login re-sync notice:', e);
+    }
   };
 
   const handleLogout = async () => {
     if (currentLoggedInUser) {
       logActivity('User Logout', `${currentLoggedInUser.name} (${currentLoggedInUser.mobileNumber}) logged out.`);
     }
-    // Flush any pending updates and guarantee latest database snapshot is safely saved to server disk
+    // Flush any pending updates and guarantee latest database snapshot is safely saved to cloud Firestore & server disk
     await flushPendingSync();
     await persistDatabaseToServer({
-      members,
-      officeBearers,
-      designations,
-      admins,
-      adminCredentials,
+      members: membersRef.current,
+      officeBearers: officeBearersRef.current,
+      designations: designationsRef.current,
+      admins: adminsRef.current,
+      adminCredentials: adminCredentialsRef.current,
       auditLogs,
       documents,
       events,
@@ -437,11 +499,11 @@ export function App() {
   // Manual trigger to force-save database immediately to server disk
   const handleForceSaveDatabase = async (): Promise<boolean> => {
     const success = await persistDatabaseToServer({
-      members,
-      officeBearers,
-      designations,
-      admins,
-      adminCredentials,
+      members: membersRef.current,
+      officeBearers: officeBearersRef.current,
+      designations: designationsRef.current,
+      admins: adminsRef.current,
+      adminCredentials: adminCredentialsRef.current,
       auditLogs,
       documents,
       events,
@@ -584,128 +646,204 @@ export function App() {
   };
 
   // Member Handlers
-  const handleAddMember = (m: Member) => {
-    setMembers((prev) => {
-      const updated = [m, ...prev.filter((item) => item.id !== m.id)];
-      safeSetLocalStorage('iso_members', updated);
-      persistDatabaseToServer({ members: updated });
-      return updated;
-    });
-    logActivity('Member Added', `Registered new member ${m.fullName} (${m.id}) in ${m.city}, ${m.district}`);
+  const handleAddMember = async (m: Member) => {
+    const cleanMember: Member = {
+      ...m,
+      notes: m.notes || ''
+    };
+    const currentList = membersRef.current;
+    const updated = [cleanMember, ...currentList.filter((item) => item.id !== cleanMember.id)];
+    setMembers(updated);
+    membersRef.current = updated;
+    safeSetLocalStorage('iso_members', updated);
+    saveMemberToFirestore(cleanMember).catch((e) => console.warn('Direct Member save notice:', e));
+    await persistDatabaseToServer({ members: updated });
+    logActivity('Member Added', `Registered new member ${cleanMember.fullName} (${cleanMember.id}) in ${cleanMember.city}, ${cleanMember.district}`);
   };
 
-  const handleEditMember = (m: Member) => {
-    setMembers((prev) => {
-      const updated = prev.map((item) => (item.id === m.id ? m : item));
-      safeSetLocalStorage('iso_members', updated);
-      persistDatabaseToServer({ members: updated });
-      return updated;
-    });
-    logActivity('Member Updated', `Modified record for ${m.fullName} (${m.id})`);
+  const handleEditMember = async (m: Member) => {
+    const cleanMember: Member = {
+      ...m,
+      notes: m.notes || ''
+    };
+    const currentList = membersRef.current;
+    const updated = currentList.map((item) => (item.id === cleanMember.id ? cleanMember : item));
+    setMembers(updated);
+    membersRef.current = updated;
+    safeSetLocalStorage('iso_members', updated);
+    saveMemberToFirestore(cleanMember).catch((e) => console.warn('Direct Member save notice:', e));
+    await persistDatabaseToServer({ members: updated });
+    logActivity('Member Updated', `Modified record for ${cleanMember.fullName} (${cleanMember.id})`);
   };
 
-  const handleDeleteMember = (id: string) => {
-    const target = members.find((m) => m.id === id);
-    setMembers((prev) => {
-      const updated = prev.filter((m) => m.id !== id);
-      safeSetLocalStorage('iso_members', updated);
-      persistDatabaseToServer({ members: updated });
-      return updated;
-    });
+  const handleDeleteMember = async (id: string) => {
+    const currentList = membersRef.current;
+    const target = currentList.find((m) => m.id === id);
+    const updated = currentList.filter((m) => m.id !== id);
+    setMembers(updated);
+    membersRef.current = updated;
+    safeSetLocalStorage('iso_members', updated);
+    await persistDatabaseToServer({ members: updated });
     logActivity('Member Deleted', `Removed record ${target?.fullName || id}`);
   };
 
   // Office Bearer Handlers
-  const handleAddOfficeBearer = (b: OfficeBearer) => {
-    setOfficeBearers((prev) => {
-      const updated = [b, ...prev.filter((o) => o.id !== b.id)];
-      safeSetLocalStorage('iso_office_bearers', updated);
-      persistDatabaseToServer({ officeBearers: updated });
-      return updated;
-    });
-    logActivity('Office Bearer Appointed', `Appointed ${b.name} as ${b.designation}`);
+  const handleAddOfficeBearer = async (b: OfficeBearer) => {
+    const cleanBearer: OfficeBearer = {
+      ...b,
+      notes: b.notes || '',
+      country: b.country || 'Pakistan',
+      province: b.province || 'Islamabad Capital Territory',
+      division: b.division || 'Islamabad',
+      district: b.district || 'Islamabad',
+      city: b.city || 'Islamabad',
+      appointmentDate: b.appointmentDate || (b as any).appointedDate || new Date().toISOString().split('T')[0],
+      status: b.status || 'Active'
+    };
+    const currentList = officeBearersRef.current;
+    const updated = [cleanBearer, ...currentList.filter((o) => o.id !== cleanBearer.id)];
+    setOfficeBearers(updated);
+    officeBearersRef.current = updated;
+    safeSetLocalStorage('iso_office_bearers', updated);
+    saveOfficeBearerToFirestore(cleanBearer).catch((e) => console.warn('Direct OB save notice:', e));
+    await persistDatabaseToServer({ officeBearers: updated });
+    logActivity('Office Bearer Appointed', `Appointed ${cleanBearer.name} as ${cleanBearer.designation}`);
   };
 
-  const handleEditOfficeBearer = (b: OfficeBearer) => {
-    setOfficeBearers((prev) => {
-      const updated = prev.map((item) => (item.id === b.id ? b : item));
-      safeSetLocalStorage('iso_office_bearers', updated);
-      persistDatabaseToServer({ officeBearers: updated });
-      return updated;
-    });
-    logActivity('Office Bearer Updated', `Updated appointment details for ${b.name} (${b.designation})`);
+  const handleEditOfficeBearer = async (b: OfficeBearer) => {
+    const cleanBearer: OfficeBearer = {
+      ...b,
+      notes: b.notes || '',
+      country: b.country || 'Pakistan',
+      province: b.province || 'Islamabad Capital Territory',
+      division: b.division || 'Islamabad',
+      district: b.district || 'Islamabad',
+      city: b.city || 'Islamabad',
+      appointmentDate: b.appointmentDate || (b as any).appointedDate || new Date().toISOString().split('T')[0],
+      status: b.status || 'Active'
+    };
+    const currentList = officeBearersRef.current;
+    const updated = currentList.map((item) => (item.id === cleanBearer.id ? cleanBearer : item));
+    setOfficeBearers(updated);
+    officeBearersRef.current = updated;
+    safeSetLocalStorage('iso_office_bearers', updated);
+    saveOfficeBearerToFirestore(cleanBearer).catch((e) => console.warn('Direct OB save notice:', e));
+    await persistDatabaseToServer({ officeBearers: updated });
+    logActivity('Office Bearer Updated', `Updated appointment details for ${cleanBearer.name} (${cleanBearer.designation})`);
   };
 
-  const handleDeleteOfficeBearer = (id: string) => {
-    const target = officeBearers.find((o) => o.id === id);
-    setOfficeBearers((prev) => {
-      const updated = prev.filter((o) => o.id !== id);
-      safeSetLocalStorage('iso_office_bearers', updated);
-      persistDatabaseToServer({ officeBearers: updated });
-      return updated;
-    });
+  const handleDeleteOfficeBearer = async (id: string) => {
+    const currentList = officeBearersRef.current;
+    const target = currentList.find((o) => o.id === id);
+    const updated = currentList.filter((o) => o.id !== id);
+    setOfficeBearers(updated);
+    officeBearersRef.current = updated;
+    safeSetLocalStorage('iso_office_bearers', updated);
+    deleteOfficeBearerFromFirestore(id).catch((e) => console.warn('Direct OB delete notice:', e));
+    await persistDatabaseToServer({ officeBearers: updated });
     logActivity('Office Bearer Removed', `Vacated appointment for ${target?.name || id}`);
   };
 
   // Designation Handlers
-  const handleAddDesignation = (d: Designation) => {
-    setDesignations((prev) => {
-      const updated = [...prev, d];
-      safeSetLocalStorage('iso_designations', updated);
-      persistDatabaseToServer({ designations: updated });
-      return updated;
-    });
-    logActivity('Designation Created', `Added custom designation ${d.title} (${d.level} Tier)`);
+  const handleAddDesignation = async (d: Designation) => {
+    const cleanDesg: Designation = {
+      ...d,
+      description: d.description || ''
+    };
+    const currentList = designationsRef.current;
+    const updated = [...currentList.filter((item) => item.id !== cleanDesg.id), cleanDesg];
+    setDesignations(updated);
+    designationsRef.current = updated;
+    safeSetLocalStorage('iso_designations', updated);
+    saveDesignationToFirestore(cleanDesg).catch((e) => console.warn('Direct Desg save notice:', e));
+    await persistDatabaseToServer({ designations: updated });
+    logActivity('Designation Created', `Added custom designation ${cleanDesg.title} (${cleanDesg.level} Tier)`);
   };
 
-  const handleDeleteDesignation = (id: string) => {
-    const target = designations.find((d) => d.id === id);
-    setDesignations((prev) => {
-      const updated = prev.filter((d) => d.id !== id);
-      safeSetLocalStorage('iso_designations', updated);
-      persistDatabaseToServer({ designations: updated });
-      return updated;
-    });
+  const handleEditDesignation = async (d: Designation, oldTitle?: string) => {
+    const cleanDesg: Designation = {
+      ...d,
+      description: d.description || ''
+    };
+    const currentList = designationsRef.current;
+    const updatedDesgs = currentList.map((item) => (item.id === cleanDesg.id ? cleanDesg : item));
+    setDesignations(updatedDesgs);
+    designationsRef.current = updatedDesgs;
+    safeSetLocalStorage('iso_designations', updatedDesgs);
+    saveDesignationToFirestore(cleanDesg).catch((e) => console.warn('Direct Desg save notice:', e));
+
+    if (oldTitle && oldTitle !== cleanDesg.title) {
+      const currentOBs = officeBearersRef.current;
+      const updatedOBs = currentOBs.map((b) => (b.designation === oldTitle ? { ...b, designation: cleanDesg.title } : b));
+      setOfficeBearers(updatedOBs);
+      officeBearersRef.current = updatedOBs;
+      safeSetLocalStorage('iso_office_bearers', updatedOBs);
+      await persistDatabaseToServer({ designations: updatedDesgs, officeBearers: updatedOBs });
+    } else {
+      await persistDatabaseToServer({ designations: updatedDesgs });
+    }
+    logActivity('Designation Updated', `Updated designation ${cleanDesg.title} (${cleanDesg.level} Tier)`);
+  };
+
+  const handleDeleteDesignation = async (id: string) => {
+    const currentList = designationsRef.current;
+    const target = currentList.find((d) => d.id === id);
+    const updated = currentList.filter((d) => d.id !== id);
+    setDesignations(updated);
+    designationsRef.current = updated;
+    safeSetLocalStorage('iso_designations', updated);
+    deleteDesignationFromFirestore(id).catch((e) => console.warn('Direct Desg delete notice:', e));
+    await persistDatabaseToServer({ designations: updated });
     logActivity('Designation Removed', `Deleted custom designation ${target?.title || id}`);
   };
 
-  // Admin Handlers
+  // Admin Handlers - Restricted to Super Administrator Exclusive Authority
   const handleAddAdmin = (adm: AdminUser) => {
-    let updatedAdminsList: AdminUser[] = [];
-    setAdmins((prev) => {
-      const exists = prev.some((a) => a.id === adm.id || (a.email && a.email.toLowerCase() === adm.email.toLowerCase()));
-      updatedAdminsList = exists
-        ? prev.map((a) => (a.id === adm.id || (a.email && a.email.toLowerCase() === adm.email.toLowerCase()) ? adm : a))
-        : [...prev, adm];
-      safeSetLocalStorage('iso_admins', updatedAdminsList);
-      return updatedAdminsList;
-    });
+    if (!isSuperAdmin) {
+      alert('Access Denied: Only the Super Administrator has authority to add or increase admin accounts.');
+      logActivity('Security Warning', `Unauthorized attempt by ${currentLoggedInUser?.name || 'User'} to add admin`);
+      return;
+    }
 
     const cleanMobile = adm.phone?.trim() || '';
+    const cleanEmail = adm.email?.trim().toLowerCase() || '';
+
+    // Direct synchronous calculation from current admins state
+    const exists = admins.some(
+      (a) => a.id === adm.id || (cleanEmail && a.email && a.email.toLowerCase() === cleanEmail)
+    );
+    const updatedAdminsList = exists
+      ? admins.map((a) =>
+          a.id === adm.id || (cleanEmail && a.email && a.email.toLowerCase() === cleanEmail) ? adm : a
+        )
+      : [...admins, adm];
+
     const newCred: AdminCredential = {
       mobileNumber: cleanMobile || '0300' + Math.floor(1000000 + Math.random() * 9000000),
       password: 'admin123',
       name: adm.name,
       designation: adm.designation,
       role: (adm.role as any) || 'Admin',
-      isSuperAdmin: Boolean(adm.isSuperAdmin),
+      isSuperAdmin: false,
       createdDate: adm.createdDate || new Date().toISOString().split('T')[0],
-      email: adm.email?.trim().toLowerCase(),
+      email: cleanEmail,
       memberId: adm.id
     };
 
-    let updatedCredsList: AdminCredential[] = [];
-    setAdminCredentials((prev) => {
-      const filtered = prev.filter(
+    const updatedCredsList = [
+      newCred,
+      ...adminCredentials.filter(
         (c) =>
           (!cleanMobile || c.mobileNumber !== cleanMobile) &&
-          (!adm.email || c.email?.toLowerCase() !== adm.email.toLowerCase()) &&
-          (c.memberId !== adm.id)
-      );
-      updatedCredsList = [newCred, ...filtered];
-      safeSetLocalStorage('iso_admin_credentials', updatedCredsList);
-      return updatedCredsList;
-    });
+          (!cleanEmail || c.email?.toLowerCase() !== cleanEmail) &&
+          c.memberId !== adm.id
+      )
+    ];
+
+    setAdmins(updatedAdminsList);
+    setAdminCredentials(updatedCredsList);
+    safeSetLocalStorage('iso_admins', updatedAdminsList);
+    safeSetLocalStorage('iso_admin_credentials', updatedCredsList);
 
     // Immediate permanent server database save
     persistDatabaseToServer({
@@ -713,80 +851,87 @@ export function App() {
       adminCredentials: updatedCredsList
     });
 
-    logActivity('Admin Created', `Granted admin access to ${adm.name} (${adm.designation})`);
+    logActivity('Admin Created', `Super Administrator created admin ${adm.name} (${adm.id} - ${adm.designation})`);
   };
 
   const handleEditAdmin = (adm: AdminUser) => {
-    let updatedAdminsList: AdminUser[] = [];
-    setAdmins((prev) => {
-      updatedAdminsList = prev.map((item) => (item.id === adm.id ? adm : item));
-      safeSetLocalStorage('iso_admins', updatedAdminsList);
-      return updatedAdminsList;
+    if (!isSuperAdmin) {
+      alert('Access Denied: Only the Super Administrator has authority to edit admin accounts or RBAC permissions.');
+      logActivity('Security Warning', `Unauthorized attempt by ${currentLoggedInUser?.name || 'User'} to modify admin RBAC`);
+      return;
+    }
+
+    const cleanMobile = adm.phone?.trim() || '';
+    const cleanEmail = adm.email?.trim().toLowerCase() || '';
+
+    const updatedAdminsList = admins.map((item) => (item.id === adm.id ? adm : item));
+
+    const updatedCredsList = adminCredentials.map((c) => {
+      if (
+        (cleanMobile && c.mobileNumber === cleanMobile) ||
+        (cleanEmail && c.email?.toLowerCase() === cleanEmail) ||
+        c.memberId === adm.id
+      ) {
+        return {
+          ...c,
+          name: adm.name,
+          designation: adm.designation,
+          role: (adm.role as any) || c.role,
+          isSuperAdmin: Boolean(adm.isSuperAdmin),
+          email: cleanEmail || c.email,
+          mobileNumber: cleanMobile || c.mobileNumber
+        };
+      }
+      return c;
     });
 
-    let updatedCredsList: AdminCredential[] = [];
-    setAdminCredentials((prev) => {
-      updatedCredsList = prev.map((c) => {
-        if (
-          (adm.phone && c.mobileNumber === adm.phone.trim()) ||
-          (adm.email && c.email?.toLowerCase() === adm.email.trim().toLowerCase()) ||
-          (c.memberId === adm.id)
-        ) {
-          return {
-            ...c,
-            name: adm.name,
-            designation: adm.designation,
-            role: (adm.role as any) || c.role,
-            isSuperAdmin: Boolean(adm.isSuperAdmin),
-            email: adm.email?.trim().toLowerCase() || c.email,
-            mobileNumber: adm.phone?.trim() || c.mobileNumber
-          };
-        }
-        return c;
-      });
-      safeSetLocalStorage('iso_admin_credentials', updatedCredsList);
-      return updatedCredsList;
-    });
+    setAdmins(updatedAdminsList);
+    setAdminCredentials(updatedCredsList);
+    safeSetLocalStorage('iso_admins', updatedAdminsList);
+    safeSetLocalStorage('iso_admin_credentials', updatedCredsList);
 
-    // Immediate permanent server database save
     persistDatabaseToServer({
       admins: updatedAdminsList,
       adminCredentials: updatedCredsList
     });
 
-    logActivity('Admin Permissions Modified', `Updated RBAC rights for admin ${adm.name}`);
+    logActivity('Admin Permissions Modified', `Super Administrator updated RBAC rights for admin ${adm.name} (${adm.id})`);
   };
 
   const handleDeleteAdmin = (id: string) => {
+    if (!isSuperAdmin) {
+      alert('Access Denied: Only the Super Administrator has authority to remove or decrease admin accounts.');
+      logActivity('Security Warning', `Unauthorized attempt by ${currentLoggedInUser?.name || 'User'} to delete admin`);
+      return;
+    }
+
     const target = admins.find((a) => a.id === id);
-    let updatedAdminsList: AdminUser[] = [];
-    setAdmins((prev) => {
-      updatedAdminsList = prev.filter((a) => a.id !== id);
-      safeSetLocalStorage('iso_admins', updatedAdminsList);
-      return updatedAdminsList;
-    });
+    if (target?.isSuperAdmin || id === 'ADM-0001') {
+      alert('Security Protection: The Central Super Administrator account cannot be removed or demoted.');
+      return;
+    }
 
-    let updatedCredsList: AdminCredential[] = [];
-    setAdminCredentials((prev) => {
-      updatedCredsList = target
-        ? prev.filter(
-            (c) =>
-              c.memberId !== id &&
-              (!target.phone || c.mobileNumber !== target.phone.trim()) &&
-              (!target.email || c.email?.toLowerCase() !== target.email.trim().toLowerCase())
-          )
-        : prev.filter((c) => c.memberId !== id);
-      safeSetLocalStorage('iso_admin_credentials', updatedCredsList);
-      return updatedCredsList;
-    });
+    const updatedAdminsList = admins.filter((a) => a.id !== id);
+    const updatedCredsList = target
+      ? adminCredentials.filter(
+          (c) =>
+            c.memberId !== id &&
+            (!target.phone || c.mobileNumber !== target.phone.trim()) &&
+            (!target.email || c.email?.toLowerCase() !== target.email.trim().toLowerCase())
+        )
+      : adminCredentials.filter((c) => c.memberId !== id);
 
-    // Immediate permanent server database save
+    setAdmins(updatedAdminsList);
+    setAdminCredentials(updatedCredsList);
+    safeSetLocalStorage('iso_admins', updatedAdminsList);
+    safeSetLocalStorage('iso_admin_credentials', updatedCredsList);
+
     persistDatabaseToServer({
       admins: updatedAdminsList,
       adminCredentials: updatedCredsList
     });
 
-    logActivity('Admin Removed', `Revoked admin permissions for ${target?.name || id}`);
+    logActivity('Admin Removed', `Super Administrator removed admin privileges for ${target?.name || id}`);
   };
 
   const handleDeleteDocument = (id: string) => {
@@ -830,8 +975,23 @@ export function App() {
     } else if (category === 'auditLogs') {
       setAuditLogs([]);
     } else if (category === 'admins') {
-      setAdmins((prev) => prev.filter((a) => a.isSuperAdmin));
-      logActivity('Category Purged', 'Purged all secondary Admin accounts');
+      if (!isSuperAdmin) {
+        alert('Access Denied: Only the Super Administrator has authority to purge admin accounts.');
+        return;
+      }
+      const remainingAdmins = admins.filter((a) => a.isSuperAdmin || a.id === 'ADM-0001');
+      const remainingCreds = adminCredentials.filter(
+        (c) => c.isSuperAdmin || c.role === 'SuperAdmin' || c.memberId === 'ADM-0001'
+      );
+      setAdmins(remainingAdmins);
+      setAdminCredentials(remainingCreds);
+      safeSetLocalStorage('iso_admins', remainingAdmins);
+      safeSetLocalStorage('iso_admin_credentials', remainingCreds);
+      persistDatabaseToServer({
+        admins: remainingAdmins,
+        adminCredentials: remainingCreds
+      });
+      logActivity('Category Purged', 'Super Administrator purged all secondary Admin accounts');
     }
   };
 
@@ -1007,18 +1167,23 @@ export function App() {
 
     logActivity('Member Registration (Pending)', `${newMember.fullName} registered from ${newMember.city} (Card Status: Pending Approval)`);
 
-    // Immediate permanent server database save
-    setTimeout(() => {
-      persistDatabaseToServer({
-        members: updatedMembers.length > 0 ? updatedMembers : undefined,
-        adminCredentials: updatedCreds.length > 0 ? updatedCreds : undefined
-      });
-    }, 100);
+    // Immediate permanent server database save and ref update
+    membersRef.current = updatedMembers;
+    if (updatedCreds.length > 0) {
+      adminCredentialsRef.current = updatedCreds;
+      safeSetLocalStorage('iso_admin_credentials', updatedCreds);
+    }
+    safeSetLocalStorage('iso_members', updatedMembers);
+    persistDatabaseToServer({
+      members: updatedMembers,
+      adminCredentials: updatedCreds.length > 0 ? updatedCreds : undefined
+    });
   };
 
   const handleRegisterOfficeBearerFromPortal = (bearerData: Omit<OfficeBearer, 'id' | 'appointmentDate' | 'status'>) => {
     const newOb: OfficeBearer = {
       ...bearerData,
+      notes: (bearerData as any).notes || '',
       id: `ISO-OB-${Date.now().toString().slice(-4)}`,
       appointmentDate: new Date().toISOString().split('T')[0],
       status: 'Active'
@@ -1072,13 +1237,18 @@ export function App() {
     setRegistrationNotifications((prev) => [notif, ...prev]);
     logActivity('Cabinet Official Self-Registration', `${newOb.name} appointed as ${newOb.designation} from ${newOb.city} (Mobile: ${newOb.mobileNumber})`);
 
-    // Immediate permanent server database save
-    setTimeout(() => {
-      persistDatabaseToServer({
-        officeBearers: updatedObs.length > 0 ? updatedObs : undefined,
-        adminCredentials: updatedCreds.length > 0 ? updatedCreds : undefined
-      });
-    }, 100);
+    // Immediate permanent server database save and ref update
+    officeBearersRef.current = updatedObs;
+    if (updatedCreds.length > 0) {
+      adminCredentialsRef.current = updatedCreds;
+      safeSetLocalStorage('iso_admin_credentials', updatedCreds);
+    }
+    safeSetLocalStorage('iso_office_bearers', updatedObs);
+    saveOfficeBearerToFirestore(newOb).catch((e) => console.warn('Direct OB save notice:', e));
+    persistDatabaseToServer({
+      officeBearers: updatedObs,
+      adminCredentials: updatedCreds.length > 0 ? updatedCreds : undefined
+    });
   };
 
   const handleMarkNotificationRead = (id: string) => {
@@ -1140,7 +1310,11 @@ export function App() {
     'savedOpportunities',
     'supabaseConfig'
   ];
-  const effectiveActiveTab = (isRegularMember && !allowedMemberTabs.includes(activeTab)) ? 'members' : activeTab;
+  const effectiveActiveTab = (isRegularMember && !allowedMemberTabs.includes(activeTab))
+    ? 'members'
+    : (!isSuperAdmin && activeTab === 'superAdmin')
+    ? 'dashboard'
+    : activeTab;
 
   const currentProfile: Profile = {
     id: currentLoggedInUser?.username || 'user-syed-amir',
@@ -1241,6 +1415,7 @@ export function App() {
               onEditOfficeBearer={handleEditOfficeBearer}
               onDeleteOfficeBearer={handleDeleteOfficeBearer}
               onAddDesignation={handleAddDesignation}
+              onEditDesignation={handleEditDesignation}
               onDeleteDesignation={handleDeleteDesignation}
               showAddModalDirectly={showAddOBDirectly}
               setShowAddModalDirectly={setShowAddOBDirectly}
@@ -1287,6 +1462,8 @@ export function App() {
               onAddAdmin={handleAddAdmin}
               onEditAdmin={handleEditAdmin}
               onDeleteAdmin={handleDeleteAdmin}
+              isSuperAdmin={isSuperAdmin}
+              currentLoggedInUser={currentLoggedInUser}
             />
           )}
 
@@ -1319,17 +1496,7 @@ export function App() {
               members={members}
               officeBearers={officeBearers}
               currentLoggedInUser={currentLoggedInUser}
-              onUpdateMember={(updated) => {
-                let updatedList: Member[] = [];
-                setMembers((prev) => {
-                  updatedList = prev.map((m) => (m.id === updated.id ? updated : m));
-                  return updatedList;
-                });
-                setTimeout(() => {
-                  persistDatabaseToServer({ members: updatedList });
-                }, 100);
-                logActivity('Member Card Status Updated', `Updated status for ${updated.fullName} to ${updated.status}`);
-              }}
+              onUpdateMember={handleEditMember}
             />
           )}
 
@@ -1427,12 +1594,12 @@ export function App() {
         onRegisterOfficeBearer={handleRegisterOfficeBearerFromPortal}
         adminCredentials={adminCredentials}
         onAdminLoginSuccess={(user) => {
-          setCurrentLoggedInUser(user);
+          handleLoginSuccess(user);
           setIsPortalOpen(false);
           setActiveTab('superAdmin');
         }}
         currentLoggedInUser={currentLoggedInUser}
-        onLogout={() => setCurrentLoggedInUser(null)}
+        onLogout={handleLogout}
       />
 
       {/* Official Compulsory Google Registration Form Modal */}

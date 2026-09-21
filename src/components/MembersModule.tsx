@@ -106,7 +106,9 @@ export const MembersModule: React.FC<MembersModuleProps> = ({
     const matchesProvince = provinceFilter === 'All' || m.province === provinceFilter;
     const matchesStatus =
       statusFilter === 'All' ||
-      (statusFilter === 'Approved' ? (m.status === 'Approved' || m.status === 'Active') : m.status === statusFilter);
+      (statusFilter === 'Approved'
+        ? m.status === 'Approved' || m.status === 'Active' || m.status === 'Verified'
+        : m.status === statusFilter);
 
     return matchesSearch && matchesProvince && matchesStatus;
   });
@@ -447,6 +449,7 @@ export const MembersModule: React.FC<MembersModuleProps> = ({
               className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-slate-100 font-medium"
             >
               <option value="All">All Statuses</option>
+              <option value="Verified">Verified (Official Trust Badge)</option>
               <option value="Approved">Approved (Card Download Active)</option>
               <option value="Pending">Pending Super Admin Approval</option>
               <option value="Rejected">Rejected</option>
@@ -521,14 +524,18 @@ export const MembersModule: React.FC<MembersModuleProps> = ({
                       <div className="space-y-1.5">
                         <span
                           className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider inline-flex items-center gap-1 ${
-                            member.status === 'Approved' || member.status === 'Active'
+                            member.status === 'Verified'
+                              ? 'bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800'
+                              : member.status === 'Approved' || member.status === 'Active'
                               ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                               : member.status === 'Rejected'
                               ? 'bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800'
                               : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
                           }`}
                         >
-                          {member.status === 'Approved' || (member.status === 'Active' && !member.notes?.includes('Registered via Email OTP'))
+                          {member.status === 'Verified'
+                            ? '🛡️ Verified'
+                            : member.status === 'Approved' || (member.status === 'Active' && !member.notes?.includes('Registered via Email OTP'))
                             ? '✓ Approved'
                             : member.status === 'Rejected'
                             ? '✕ Rejected'
@@ -537,6 +544,16 @@ export const MembersModule: React.FC<MembersModuleProps> = ({
 
                         {isAdminOrManager && (
                           <div className="flex flex-wrap items-center gap-1 pt-0.5 no-print">
+                            {member.status !== 'Verified' && (
+                              <button
+                                type="button"
+                                onClick={() => onEditMember({ ...member, status: 'Verified' })}
+                                className="px-2 py-0.5 bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-[9px] rounded-lg transition-all shadow-sm flex items-center gap-0.5"
+                                title="Mark as Verified in Database (displays verified badge on card)"
+                              >
+                                Verify
+                              </button>
+                            )}
                             {member.status !== 'Approved' && (
                               <button
                                 type="button"
@@ -856,6 +873,7 @@ export const MembersModule: React.FC<MembersModuleProps> = ({
                     onChange={(e: any) => setFormData({ ...formData, status: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-slate-100 font-bold"
                   >
+                    <option value="Verified">Verified (Official Trust Badge & Card Active)</option>
                     <option value="Approved">Approved (Card Download Allowed)</option>
                     <option value="Pending">Pending Approval (Card Download Locked)</option>
                     <option value="Rejected">Rejected (Card Download Locked)</option>

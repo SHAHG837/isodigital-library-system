@@ -15,7 +15,7 @@ export interface Member {
   notes?: string;
   oathSubmitted?: boolean;
   oathDate?: string;
-  status: 'Approved' | 'Pending' | 'Rejected' | 'Active' | 'Inactive';
+  status: 'Approved' | 'Pending' | 'Rejected' | 'Active' | 'Inactive' | 'Verified';
 }
 
 export interface OfficeBearer {

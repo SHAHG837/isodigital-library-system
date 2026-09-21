@@ -1,0 +1,77 @@
+{
+  "entities": {
+    "OfficeBearer": {
+      "title": "OfficeBearer",
+      "description": "ISO Cabinet Office Bearer Record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "designation": { "type": "string" },
+        "mobileNumber": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "city": { "type": "string" },
+        "district": { "type": "string" },
+        "division": { "type": "string" },
+        "province": { "type": "string" },
+        "country": { "type": "string" },
+        "profilePhoto": { "type": "string" },
+        "appointmentDate": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "designation", "mobileNumber"]
+    },
+    "Designation": {
+      "title": "Designation",
+      "description": "ISO Leadership Designation Record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "level": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "title", "level"]
+    },
+    "Member": {
+      "title": "Member",
+      "description": "ISO General Registered Member",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "fatherName": { "type": "string" },
+        "mobileNumber": { "type": "string" },
+        "city": { "type": "string" }
+      },
+      "required": ["id", "fullName", "mobileNumber"]
+    },
+    "SystemSnapshot": {
+      "title": "SystemSnapshot",
+      "description": "ISO Central System State Snapshot",
+      "type": "object",
+      "properties": {
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/office_bearers/{bearerId}": {
+      "schema": "OfficeBearer",
+      "description": "ISO Cabinet Office Bearers collection"
+    },
+    "/designations/{designationId}": {
+      "schema": "Designation",
+      "description": "ISO Cabinet Designations collection"
+    },
+    "/members/{memberId}": {
+      "schema": "Member",
+      "description": "ISO Organization Members collection"
+    },
+    "/system_state/{stateId}": {
+      "schema": "SystemSnapshot",
+      "description": "Master persistent snapshot state"
+    }
+  }
+}

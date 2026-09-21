@@ -22,10 +22,12 @@ import {
   CreditCard,
   ShieldCheck,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  Check
 } from 'lucide-react';
 import { exportToExcel, printElement } from '../utils/exportImport';
 import { OfficeBearerCardModal } from './OfficeBearerCardModal';
+import { compressImage } from '../utils/imageUtils';
 
 interface OfficeBearersModuleProps {
   officeBearers: OfficeBearer[];
@@ -34,6 +36,7 @@ interface OfficeBearersModuleProps {
   onEditOfficeBearer: (bearer: OfficeBearer) => void;
   onDeleteOfficeBearer: (id: string) => void;
   onAddDesignation: (desg: Designation) => void;
+  onEditDesignation?: (desg: Designation, oldTitle?: string) => void;
   onDeleteDesignation: (id: string) => void;
   showAddModalDirectly?: boolean;
   setShowAddModalDirectly?: (val: boolean) => void;
@@ -47,6 +50,7 @@ export const OfficeBearersModule: React.FC<OfficeBearersModuleProps> = ({
   onEditOfficeBearer,
   onDeleteOfficeBearer,
   onAddDesignation,
+  onEditDesignation,
   onDeleteDesignation,
   showAddModalDirectly,
   setShowAddModalDirectly,
@@ -75,6 +79,9 @@ export const OfficeBearersModule: React.FC<OfficeBearersModuleProps> = ({
   const [showDesgModal, setShowDesgModal] = useState(false);
   const [newDesgTitle, setNewDesgTitle] = useState('');
   const [newDesgLevel, setNewDesgLevel] = useState<'Central' | 'Provincial' | 'Divisional' | 'District' | 'City'>('Central');
+  const [editingDesgId, setEditingDesgId] = useState<string | null>(null);
+  const [editDesgTitle, setEditDesgTitle] = useState('');
+  const [editDesgLevel, setEditDesgLevel] = useState<'Central' | 'Provincial' | 'Divisional' | 'District' | 'City'>('Central');
 
   // Form State
   const [formData, setFormData] = useState<Partial<OfficeBearer>>({
@@ -105,6 +112,18 @@ export const OfficeBearersModule: React.FC<OfficeBearersModuleProps> = ({
 
     return matchesSearch && matchesDesignation;
   });
+
+  // Calculate next available Office Bearer ID without collisions
+  const getNextBearerId = () => {
+    const numericIds = officeBearers
+      .map((b) => {
+        const match = b.id?.match(/\d+$/);
+        return match ? parseInt(match[0], 10) : 0;
+      })
+      .filter((n) => !isNaN(n));
+    const nextNum = (numericIds.length > 0 ? Math.max(...numericIds) : 0) + 1;
+    return `ISO-OB-2026-${String(nextNum).padStart(3, '0')}`;
+  };
 
   const handleOpenAdd = () => {
     setEditingBearer(null);
@@ -143,7 +162,7 @@ export const OfficeBearersModule: React.FC<OfficeBearersModuleProps> = ({
       });
     } else {
       const newBearer: OfficeBearer = {
-        id: `ISO-OB-2026-${String(officeBearers.length + 1).padStart(3, '0')}`,
+        id: getNextBearerId(),
         name: formData.name || '',
         designation: formData.designation || 'Central President',
         mobileNumber: formData.mobileNumber || '',
@@ -155,7 +174,7 @@ export const OfficeBearersModule: React.FC<OfficeBearersModuleProps> = ({
         country: formData.country || 'Pakistan',
         profilePhoto: formData.profilePhoto || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80',
         appointmentDate: formData.appointmentDate || new Date().toISOString().split('T')[0],
-        notes: formData.notes,
+        notes: formData.notes || '',
         status: (formData.status as any) || 'Active'
       };
       onAddOfficeBearer(newBearer);
@@ -169,11 +188,11 @@ export const OfficeBearersModule: React.FC<OfficeBearersModuleProps> = ({
 
   const handleAddDesgSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newDesgTitle) return;
+    if (!newDesgTitle.trim()) return;
 
     const newDesg: Designation = {
       id: `DESG-${Date.now()}`,
-      title: newDesgTitle,
+      title: newDesgTitle.trim(),
       level: newDesgLevel
     };
 
@@ -181,14 +200,49 @@ export const OfficeBearersModule: React.FC<OfficeBearersModuleProps> = ({
     setNewDesgTitle('');
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleStartEditDesg = (d: Designation) => {
+    setEditingDesgId(d.id);
+    setEditDesgTitle(d.title);
+    setEditDesgLevel(d.level);
+  };
+
+  const handleCancelEditDesg = () => {
+    setEditingDesgId(null);
+    setEditDesgTitle('');
+  };
+
+  const handleSaveEditDesg = (e: React.FormEvent, originalDesg: Designation) => {
+    e.preventDefault();
+    if (!editDesgTitle.trim()) return;
+
+    const oldTitle = originalDesg.title;
+    const updated: Designation = {
+      ...originalDesg,
+      title: editDesgTitle.trim(),
+      level: editDesgLevel
+    };
+
+    if (onEditDesignation) {
+      onEditDesignation(updated, oldTitle);
+    }
+    setEditingDesgId(null);
+    setEditDesgTitle('');
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData((prev) => ({ ...prev, profilePhoto: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImage(file, 500, 500, 0.82);
+        setFormData((prev) => ({ ...prev, profilePhoto: compressed }));
+      } catch (err) {
+        console.error('Error compressing uploaded photo:', err);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setFormData((prev) => ({ ...prev, profilePhoto: reader.result as string }));
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -667,26 +721,102 @@ export const OfficeBearersModule: React.FC<OfficeBearersModuleProps> = ({
               </button>
             </form>
 
-            <div className="mt-5 max-h-60 overflow-y-auto space-y-2 pr-1">
-              {designations.map((d) => (
-                <div key={d.id} className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900/50 rounded-xl text-xs border border-slate-100 dark:border-slate-800">
-                  <div>
-                    <p className="font-bold text-slate-900 dark:text-white">{d.title}</p>
-                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">{d.level} Tier</span>
-                  </div>
-                  <button
-                    onClick={() => onDeleteDesignation(d.id)}
-                    className="p-1 text-slate-400 hover:text-red-500"
-                    title="Delete Designation"
+            <div className="mt-5 max-h-72 overflow-y-auto space-y-2 pr-1">
+              {designations.map((d) => {
+                const isEditing = editingDesgId === d.id;
+
+                if (isEditing) {
+                  return (
+                    <form
+                      key={d.id}
+                      onSubmit={(e) => handleSaveEditDesg(e, d)}
+                      className="p-2.5 bg-amber-500/10 dark:bg-amber-950/30 rounded-xl text-xs border border-amber-500/40 space-y-2"
+                    >
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          required
+                          value={editDesgTitle}
+                          onChange={(e) => setEditDesgTitle(e.target.value)}
+                          className="flex-1 px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-amber-400 dark:border-amber-600 rounded-lg text-slate-900 dark:text-slate-100 font-bold focus:ring-1 focus:ring-amber-500"
+                          placeholder="Designation Title"
+                        />
+                        <select
+                          value={editDesgLevel}
+                          onChange={(e: any) => setEditDesgLevel(e.target.value)}
+                          className="px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-amber-400 dark:border-amber-600 rounded-lg text-slate-900 dark:text-slate-100 font-semibold"
+                        >
+                          <option value="Central">Central</option>
+                          <option value="Provincial">Provincial</option>
+                          <option value="Divisional">Divisional</option>
+                          <option value="District">District</option>
+                          <option value="City">City</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleCancelEditDesg}
+                          className="px-3 py-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-lg transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-3.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow flex items-center gap-1 transition-colors"
+                        >
+                          <Check className="w-3.5 h-3.5" /> Save Changes
+                        </button>
+                      </div>
+                    </form>
+                  );
+                }
+
+                return (
+                  <div
+                    key={d.id}
+                    className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900/50 rounded-xl text-xs border border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
                   >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">{d.title}</p>
+                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">{d.level} Tier</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditDesg(d)}
+                        className="p-1.5 text-slate-400 hover:text-amber-500 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/50 transition-colors"
+                        title="Edit Designation"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Are you sure you want to delete designation "${d.title}"?`)) {
+                            onDeleteDesignation(d.id);
+                          }
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors"
+                        title="Delete Designation"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-700 text-right">
-              <button onClick={() => setShowDesgModal(false)} className="px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDesgModal(false);
+                  handleCancelEditDesg();
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition-colors"
+              >
                 Done
               </button>
             </div>

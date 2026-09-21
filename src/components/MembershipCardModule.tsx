@@ -75,7 +75,7 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
     : `ISO-42101-${personId.replace(/[^0-9]/g, '').padEnd(7, '0').slice(0, 7)}-1`;
 
   // Generate QR Code data URL
-  const qrData = `https://iso.org.pk/verify?id=${encodeURIComponent(personId)}&name=${encodeURIComponent(personName)}&role=${encodeURIComponent(personRole)}`;
+  const qrData = `https://iso.org.pk/verify?id=${encodeURIComponent(personId)}&name=${encodeURIComponent(personName)}&role=${encodeURIComponent(personRole)}&status=${encodeURIComponent(activePerson && 'status' in activePerson ? activePerson.status : 'Active')}`;
   const qrCodeUrl = generateQRCodeDataURL(qrData);
 
   const handleDownloadPDF = async () => {
@@ -96,10 +96,18 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
     setIsGenerating(false);
   };
 
+  const isMemberVerified =
+    selectedType === 'Member' &&
+    activePerson &&
+    'status' in activePerson &&
+    activePerson.status === 'Verified';
+
   const isApproved =
     selectedType === 'OfficeBearer' ||
     (activePerson && 'status' in activePerson
-      ? activePerson.status === 'Approved' || (activePerson.status === 'Active' && !activePerson.notes?.includes('Registered via Email OTP'))
+      ? activePerson.status === 'Approved' ||
+        activePerson.status === 'Verified' ||
+        (activePerson.status === 'Active' && !activePerson.notes?.includes('Registered via Email OTP'))
       : false);
 
   const PendingWatermarkOverlay = () => (
@@ -173,48 +181,94 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
         </div>
       )}
 
-      {/* Admin Approval Quick Bar */}
-      {isAdminOrManager && activePerson && 'status' in activePerson && activePerson.status !== 'Approved' && (
-        <div className="bg-slate-900 border-2 border-emerald-500/80 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl">
+      {/* Admin Approval & Verification Quick Bar */}
+      {isAdminOrManager && activePerson && 'status' in activePerson && (
+        <div className="bg-slate-900 border-2 border-slate-700/80 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl">
+            <div className={`p-2.5 rounded-xl ${isMemberVerified ? 'bg-sky-500/20 text-sky-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                <span>Super Admin Card Approval Control</span>
-                <span className="text-amber-400 font-mono text-[10px] uppercase">({activePerson.status})</span>
+              <h4 className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
+                <span>Super Admin Card & Verification Control</span>
+                <span className={`font-mono text-[10px] uppercase px-2 py-0.5 rounded-full border ${
+                  activePerson.status === 'Verified'
+                    ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+                    : activePerson.status === 'Approved'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                }`}>
+                  Status: {activePerson.status}
+                </span>
               </h4>
               <p className="text-[11px] text-slate-300">
-                You are logged in as Admin. You can review this member ({personName}) and approve their card instantly:
+                {isMemberVerified
+                  ? `Member ${personName} is officially verified in the database. The 'Verified' trust badge is actively displayed on their card.`
+                  : `You can mark ${personName} as 'Verified' in the database to display the authentic 'Verified' badge on their card:`}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => {
-                if (onUpdateMember && 'status' in activePerson) {
-                  onUpdateMember({ ...activePerson, status: 'Approved' });
-                }
-              }}
-              className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Approve Card (کارڈ منظور کریں)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (onUpdateMember && 'status' in activePerson) {
-                  onUpdateMember({ ...activePerson, status: 'Rejected' });
-                }
-              }}
-              className="px-3 py-2 bg-red-600/80 hover:bg-red-600 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
-            >
-              Reject
-            </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+            {activePerson.status !== 'Verified' ? (
+              <button
+                type="button"
+                id="btn-mark-verified"
+                onClick={() => {
+                  if (onUpdateMember && 'status' in activePerson) {
+                    onUpdateMember({ ...activePerson, status: 'Verified' });
+                  }
+                }}
+                className="flex-1 sm:flex-none px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Mark as Verified in Database (displays verified badge on card)"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Mark Verified (تصدیق شدہ کریں)</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                id="btn-unmark-verified"
+                onClick={() => {
+                  if (onUpdateMember && 'status' in activePerson) {
+                    onUpdateMember({ ...activePerson, status: 'Approved' });
+                  }
+                }}
+                className="flex-1 sm:flex-none px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-600 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Change status back to Standard Approved"
+              >
+                <span>Set to Approved</span>
+              </button>
+            )}
+
+            {activePerson.status !== 'Approved' && activePerson.status !== 'Verified' && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onUpdateMember && 'status' in activePerson) {
+                    onUpdateMember({ ...activePerson, status: 'Approved' });
+                  }
+                }}
+                className="flex-1 sm:flex-none px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Approve Card</span>
+              </button>
+            )}
+
+            {activePerson.status !== 'Rejected' && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onUpdateMember && 'status' in activePerson) {
+                    onUpdateMember({ ...activePerson, status: 'Rejected' });
+                  }
+                }}
+                className="px-3 py-2 bg-red-600/80 hover:bg-red-600 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+              >
+                Reject
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -366,10 +420,24 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
 
       {/* Card Preview Container */}
       <div className="flex flex-col items-center justify-center py-10 bg-slate-900 rounded-3xl border border-slate-800 shadow-inner">
-        <div className="text-center mb-4">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-2 mb-4">
           <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full text-[10px] font-mono font-bold uppercase tracking-widest">
             {cardLayoutFormat === 'cnic' ? 'National ID Card Format (Front & Back)' : 'Vertical Smart Badge Format'}
           </span>
+          {isMemberVerified ? (
+            <span
+              id="status-verified-indicator"
+              className="px-3 py-1 bg-sky-500/20 text-sky-300 border border-sky-400/50 rounded-full text-[10px] font-bold uppercase tracking-wide flex items-center gap-1.5 shadow-sm"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
+              <span>Verified Status in Database (تصدیق شدہ رکن)</span>
+            </span>
+          ) : selectedType === 'Member' && activePerson && 'status' in activePerson ? (
+            <span className="px-3 py-1 bg-slate-800 text-slate-400 border border-slate-700 rounded-full text-[10px] font-medium flex items-center gap-1">
+              <span>Database Status:</span>
+              <strong className="text-slate-200">{activePerson.status}</strong>
+            </span>
+          ) : null}
         </div>
 
         {/* PRINTABLE CARD AREA - CAPTURED EXACTLY BY CANVAS */}
@@ -448,18 +516,40 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
                     <div style={{ fontSize: '8px', color: '#a7f3d0', fontFamily: 'monospace' }}>
                       قومی شناختی کارڈ
                     </div>
+                    {isMemberVerified && (
+                      <div
+                        id="cnic-header-verified-tag"
+                        style={{
+                          marginTop: '2px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '2.5px',
+                          backgroundColor: 'rgba(2, 132, 199, 0.3)',
+                          border: '1px solid #38bdf8',
+                          color: '#7dd3fc',
+                          borderRadius: '3px',
+                          padding: '1px 5px',
+                          fontSize: '6.5px',
+                          fontWeight: '900',
+                          letterSpacing: '0.4px'
+                        }}
+                      >
+                        <span style={{ fontSize: '7px' }}>✓</span>
+                        <span>VERIFIED RECORD</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Body Content */}
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '6px', zIndex: 10 }}>
                   {/* Photo & Smart Chip Column */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
                     {/* Smart Chip Graphic */}
                     <div
                       style={{
                         width: '36px',
-                        height: '26px',
+                        height: '24px',
                         backgroundColor: '#d97706',
                         backgroundImage: 'linear-gradient(135deg, #f59e0b 0%, #b45309 100%)',
                         borderRadius: '4px',
@@ -471,20 +561,52 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
                       <div style={{ width: '12px', height: '100%', borderRight: '1px solid #78350f', borderLeft: '1px solid #78350f', margin: '0 auto' }} />
                     </div>
 
-                    {/* Member Photo */}
-                    <img
-                      src={personPhoto}
-                      alt={personName}
-                      crossOrigin="anonymous"
-                      style={{
-                        width: '76px',
-                        height: '86px',
-                        borderRadius: '8px',
-                        border: '2px solid #f59e0b',
-                        objectFit: 'cover',
-                        boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
-                      }}
-                    />
+                    {/* Member Photo with verified indicator */}
+                    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <img
+                        src={personPhoto}
+                        alt={personName}
+                        crossOrigin="anonymous"
+                        style={{
+                          width: '76px',
+                          height: '84px',
+                          borderRadius: '8px',
+                          border: isMemberVerified ? '2px solid #38bdf8' : '2px solid #f59e0b',
+                          objectFit: 'cover',
+                          boxShadow: isMemberVerified ? '0 0 10px rgba(56, 189, 248, 0.4), 0 4px 6px rgba(0,0,0,0.3)' : '0 4px 6px rgba(0,0,0,0.3)'
+                        }}
+                      />
+                      {isMemberVerified && (
+                        <div
+                          id="cnic-photo-verified-badge"
+                          style={{
+                            marginTop: '-9px',
+                            backgroundColor: '#0284c7',
+                            backgroundImage: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                            color: '#ffffff',
+                            borderRadius: '4px',
+                            padding: '1.5px 6px',
+                            fontSize: '6.5px',
+                            fontWeight: '900',
+                            letterSpacing: '0.6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '2.5px',
+                            border: '1px solid #7dd3fc',
+                            boxShadow: '0 2px 5px rgba(0,0,0,0.6)',
+                            zIndex: 15,
+                            textTransform: 'uppercase',
+                            whiteSpace: 'nowrap'
+                          }}
+                          title="Verified Member in ISO Database"
+                        >
+                          <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          <span>VERIFIED</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Member CNIC Details */}
@@ -498,7 +620,37 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
 
                     <div style={{ marginBottom: '2px' }}>
                       <span style={{ fontSize: '7px', color: '#a7f3d0', textTransform: 'uppercase', display: 'block', fontWeight: 'bold' }}>Full Name</span>
-                      <strong style={{ fontSize: '10px', color: '#ffffff', textTransform: 'uppercase' }}>{personName}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: '10px', color: '#ffffff', textTransform: 'uppercase' }}>{personName}</strong>
+                        {isMemberVerified && (
+                          <span
+                            id="cnic-name-verified-badge"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '2.5px',
+                              backgroundColor: '#0284c7',
+                              backgroundImage: 'linear-gradient(135deg, #0284c7 0%, #075985 100%)',
+                              color: '#ffffff',
+                              fontSize: '7px',
+                              fontWeight: '900',
+                              padding: '1px 5px',
+                              borderRadius: '9999px',
+                              border: '1px solid #7dd3fc',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                              letterSpacing: '0.4px',
+                              textTransform: 'uppercase'
+                            }}
+                            title="Verified Member Credential in ISO Database"
+                          >
+                            <svg width="7.5" height="7.5" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                              <path d="m9 12 2 2 4-4" />
+                            </svg>
+                            <span>VERIFIED</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div style={{ marginBottom: '2px' }}>
@@ -565,9 +717,34 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
                     </div>
                     <div style={{ fontSize: '8px', color: '#94a3b8' }}>International Sadat Organization Central Repository</div>
                   </div>
-                  <span style={{ fontSize: '8px', fontWeight: 'bold', color: '#38bdf8', border: '1px solid #0284c7', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(2,132,199,0.1)' }}>
-                    SECURE ENCRYPTED
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {isMemberVerified && (
+                      <span
+                        id="cnic-back-verified-seal"
+                        style={{
+                          fontSize: '7px',
+                          fontWeight: '900',
+                          color: '#ffffff',
+                          border: '1px solid #7dd3fc',
+                          padding: '1.5px 5px',
+                          borderRadius: '4px',
+                          backgroundColor: '#0284c7',
+                          backgroundImage: 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.4)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '2.5px',
+                          letterSpacing: '0.4px'
+                        }}
+                      >
+                        <span>✓</span>
+                        <span>STATUS: VERIFIED</span>
+                      </span>
+                    )}
+                    <span style={{ fontSize: '8px', fontWeight: 'bold', color: '#38bdf8', border: '1px solid #0284c7', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(2,132,199,0.1)' }}>
+                      SECURE ENCRYPTED
+                    </span>
+                  </div>
                 </div>
 
                 {/* Back Body */}
@@ -648,9 +825,83 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
                   <div style={{ fontSize: '8px', color: '#34d399', fontWeight: 'bold' }}>OFFICIAL MEMBERSHIP BADGE</div>
                 </div>
 
-                <div style={{ margin: '12px 0' }}>
-                  <img src={personPhoto} alt={personName} crossOrigin="anonymous" style={{ width: '90px', height: '90px', borderRadius: '50%', border: '3px solid #10b981', objectFit: 'cover', margin: '0 auto 8px auto' }} />
-                  <div style={{ fontSize: '13px', fontWeight: '900', color: '#ffffff' }}>{personName}</div>
+                <div style={{ margin: '10px 0', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div style={{ position: 'relative' }}>
+                    <img
+                      src={personPhoto}
+                      alt={personName}
+                      crossOrigin="anonymous"
+                      style={{
+                        width: '90px',
+                        height: '90px',
+                        borderRadius: '50%',
+                        border: isMemberVerified ? '3px solid #38bdf8' : '3px solid #10b981',
+                        objectFit: 'cover',
+                        margin: '0 auto 6px auto',
+                        boxShadow: isMemberVerified ? '0 0 12px rgba(56, 189, 248, 0.5)' : 'none'
+                      }}
+                    />
+                    {isMemberVerified && (
+                      <div
+                        id="badge-photo-verified-check"
+                        style={{
+                          position: 'absolute',
+                          bottom: '6px',
+                          right: '2px',
+                          backgroundColor: '#0284c7',
+                          color: '#ffffff',
+                          borderRadius: '50%',
+                          width: '20px',
+                          height: '20px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          border: '2px solid #0f172a',
+                          boxShadow: '0 2px 5px rgba(0,0,0,0.5)'
+                        }}
+                        title="Verified Member"
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: '13px', fontWeight: '900', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                    <span>{personName}</span>
+                  </div>
+
+                  {isMemberVerified && (
+                    <div
+                      id="badge-verified-pill"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3.5px',
+                        backgroundColor: '#0284c7',
+                        backgroundImage: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                        color: '#ffffff',
+                        fontSize: '8px',
+                        fontWeight: '900',
+                        padding: '2px 8px',
+                        borderRadius: '9999px',
+                        border: '1px solid #7dd3fc',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                        letterSpacing: '0.6px',
+                        textTransform: 'uppercase',
+                        marginTop: '4px',
+                        marginBottom: '4px'
+                      }}
+                    >
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                        <path d="m9 12 2 2 4-4" />
+                      </svg>
+                      <span>OFFICIALLY VERIFIED</span>
+                    </div>
+                  )}
+
                   <div style={{ fontSize: '10px', fontWeight: '700', color: '#fbbf24' }}>{personRole}</div>
                   <div style={{ fontSize: '9px', color: '#94a3b8', fontFamily: 'monospace', marginTop: '4px' }}>ID: {personId}</div>
                 </div>
@@ -686,8 +937,33 @@ export const MembershipCardModule: React.FC<MembershipCardModuleProps> = ({
                   DIGITAL QR VERIFICATION
                 </div>
 
-                <div style={{ backgroundColor: '#ffffff', padding: '10px', borderRadius: '12px', margin: '12px 0' }}>
-                  <img src={qrCodeUrl} alt="QR Code" style={{ width: '100px', height: '100px' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '8px 0' }}>
+                  {isMemberVerified && (
+                    <div
+                      id="badge-back-verified-chip"
+                      style={{
+                        backgroundColor: 'rgba(2, 132, 199, 0.2)',
+                        border: '1px solid #38bdf8',
+                        color: '#7dd3fc',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '7.5px',
+                        fontWeight: '900',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        marginBottom: '8px',
+                        letterSpacing: '0.4px'
+                      }}
+                    >
+                      <span>✓</span>
+                      <span>DATABASE VERIFIED CREDENTIAL</span>
+                    </div>
+                  )}
+
+                  <div style={{ backgroundColor: '#ffffff', padding: '10px', borderRadius: '12px' }}>
+                    <img src={qrCodeUrl} alt="QR Code" style={{ width: '100px', height: '100px' }} />
+                  </div>
                 </div>
 
                 <div style={{ fontSize: '8px', color: '#94a3b8', lineHeight: '1.4' }}>

@@ -87,8 +87,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {
         title: 'Systems & Security',
         items: [
-          { id: 'superAdmin' as ActiveTab, label: 'Super Administrator', icon: ShieldCheck, highlight: true },
-          { id: 'adminRbac' as ActiveTab, label: 'Admin Security', icon: UserCheck },
+          ...(isSuperAdmin ? [{ id: 'superAdmin' as ActiveTab, label: 'Super Administrator', icon: ShieldCheck, highlight: true }] : []),
+          { 
+            id: 'adminRbac' as ActiveTab, 
+            label: 'Admin Security (RBAC)', 
+            icon: UserCheck, 
+            badge: isSuperAdmin ? 'Full Control' : 'Super Admin Only' 
+          },
           { id: 'globalSearch' as ActiveTab, label: 'Global Search', icon: Search },
           { id: 'exportImport' as ActiveTab, label: 'Import / Export', icon: FileSpreadsheet },
           { id: 'googleSheets' as ActiveTab, label: 'Google Sheets & Drive', icon: FileSpreadsheet, badge: 'Live API' }

@@ -389,11 +389,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <td className="px-5 py-3.5 text-slate-400 font-mono text-[11px]">{m.mobileNumber}</td>
                     <td className="px-5 py-3.5">
                       <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-tighter ${
-                        m.status === 'Active'
+                        m.status === 'Verified'
+                          ? 'bg-sky-500/10 text-sky-400 border border-sky-500/30'
+                          : m.status === 'Active' || m.status === 'Approved'
                           ? 'bg-green-500/10 text-green-500 border border-green-500/20'
                           : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20'
                       }`}>
-                        {m.status || 'Verified'}
+                        {m.status || 'Active'}
                       </span>
                     </td>
                   </tr>
