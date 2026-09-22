@@ -28,6 +28,8 @@ interface HeaderProps {
     syncing: boolean;
     lastSavedAt: string | null;
     error: string | null;
+    quotaExceeded?: boolean;
+    storageTarget?: string;
   };
   onForceSaveDatabase?: () => Promise<boolean>;
   onOpenSupabaseConfig?: () => void;
@@ -219,17 +221,25 @@ export const Header: React.FC<HeaderProps> = ({
                 ? 'bg-amber-600/30 text-amber-300 border-amber-500/40 animate-pulse'
                 : serverSyncStatus?.error
                 ? 'bg-red-600/30 text-red-300 border-red-500/40'
+                : serverSyncStatus?.quotaExceeded
+                ? 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border-blue-500/40'
                 : 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
             }`}
             title={
-              serverSyncStatus?.lastSavedAt
+              serverSyncStatus?.quotaExceeded
+                ? `Firestore free daily write quota reached. High-Performance Server Disk Storage is active and saving all records. Last saved at ${serverSyncStatus?.lastSavedAt ? new Date(serverSyncStatus.lastSavedAt).toLocaleTimeString() : 'now'}. Click to save now.`
+                : serverSyncStatus?.lastSavedAt
                 ? `Permanent Database: Last saved to server at ${new Date(serverSyncStatus.lastSavedAt).toLocaleTimeString()}. Click to force save now.`
                 : 'Click to force save all records permanently to server storage.'
             }
           >
-            <Database className={`w-3.5 h-3.5 text-emerald-400 ${serverSyncStatus?.syncing || savingDb ? 'animate-spin' : ''}`} />
+            <Database className={`w-3.5 h-3.5 ${serverSyncStatus?.quotaExceeded ? 'text-blue-400' : 'text-emerald-400'} ${serverSyncStatus?.syncing || savingDb ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">
-              {serverSyncStatus?.syncing || savingDb ? 'Saving...' : 'Save Database'}
+              {serverSyncStatus?.syncing || savingDb
+                ? 'Saving...'
+                : serverSyncStatus?.quotaExceeded
+                ? 'Server DB'
+                : 'Save Database'}
             </span>
           </button>
         )}

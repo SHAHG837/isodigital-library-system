@@ -29,7 +29,10 @@ import {
   flushPendingSync,
   safeSetLocalStorage,
   safeGetLocalStorage,
-  subscribeToDatabaseSync
+  subscribeToDatabaseSync,
+  DatabaseSyncStatus,
+  FIRESTORE_UPGRADE_URL,
+  isFirestoreWriteQuotaExceeded
 } from './services/databaseService';
 import {
   saveOfficeBearerToFirestore,
@@ -78,6 +81,7 @@ export function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isSupabaseConfigOpen, setIsSupabaseConfigOpen] = useState(false);
+  const [quotaBannerDismissed, setQuotaBannerDismissed] = useState(false);
 
   // Portal & Auth Modal State
   const [isPortalOpen, setIsPortalOpen] = useState(false);
@@ -259,14 +263,12 @@ export function App() {
   adminCredentialsRef.current = adminCredentials;
 
   // Permanent Server Database Synchronization State
-  const [serverSyncStatus, setServerSyncStatus] = useState<{
-    syncing: boolean;
-    lastSavedAt: string | null;
-    error: string | null;
-  }>({
+  const [serverSyncStatus, setServerSyncStatus] = useState<DatabaseSyncStatus>({
     syncing: false,
     lastSavedAt: null,
-    error: null
+    error: null,
+    quotaExceeded: isFirestoreWriteQuotaExceeded(),
+    storageTarget: isFirestoreWriteQuotaExceeded() ? 'server_disk' : 'cloud_and_server'
   });
 
   const [dbLoadedFromServer, setDbLoadedFromServer] = useState(false);
@@ -544,73 +546,85 @@ export function App() {
     setHasCompletedGoogleForm(localStorage.getItem(`iso_google_form_completed_${key}`) === 'true');
   }, [currentLoggedInUser]);
 
+  // Guard to prevent initial hydration from triggering immediate re-saves
+  const isInitialLoadRef = useRef(true);
+
+  useEffect(() => {
+    if (dbLoadedFromServer && isInitialLoadRef.current) {
+      const timer = setTimeout(() => {
+        isInitialLoadRef.current = false;
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [dbLoadedFromServer]);
+
   // Sync state to localStorage & permanent server database
   useEffect(() => {
     safeSetLocalStorage('iso_members', members);
-    if (dbLoadedFromServer) {
+    if (dbLoadedFromServer && !isInitialLoadRef.current) {
       scheduleDatabaseSync({ members });
     }
   }, [members, dbLoadedFromServer]);
 
   useEffect(() => {
     safeSetLocalStorage('iso_office_bearers', officeBearers);
-    if (dbLoadedFromServer) {
+    if (dbLoadedFromServer && !isInitialLoadRef.current) {
       scheduleDatabaseSync({ officeBearers });
     }
   }, [officeBearers, dbLoadedFromServer]);
 
   useEffect(() => {
     safeSetLocalStorage('iso_designations', designations);
-    if (dbLoadedFromServer) {
+    if (dbLoadedFromServer && !isInitialLoadRef.current) {
       scheduleDatabaseSync({ designations });
     }
   }, [designations, dbLoadedFromServer]);
 
   useEffect(() => {
     safeSetLocalStorage('iso_admins', admins);
-    if (dbLoadedFromServer) {
+    if (dbLoadedFromServer && !isInitialLoadRef.current) {
       scheduleDatabaseSync({ admins });
     }
   }, [admins, dbLoadedFromServer]);
 
   useEffect(() => {
     safeSetLocalStorage('iso_admin_credentials', adminCredentials);
-    if (dbLoadedFromServer) {
+    if (dbLoadedFromServer && !isInitialLoadRef.current) {
       scheduleDatabaseSync({ adminCredentials });
     }
   }, [adminCredentials, dbLoadedFromServer]);
 
   useEffect(() => {
     safeSetLocalStorage('iso_registration_notifications', registrationNotifications);
-    if (dbLoadedFromServer) {
+    if (dbLoadedFromServer && !isInitialLoadRef.current) {
       scheduleDatabaseSync({ registrationNotifications });
     }
   }, [registrationNotifications, dbLoadedFromServer]);
 
   useEffect(() => {
     safeSetLocalStorage('iso_audit_logs', auditLogs);
-    if (dbLoadedFromServer) {
+    if (dbLoadedFromServer && !isInitialLoadRef.current) {
       scheduleDatabaseSync({ auditLogs });
     }
   }, [auditLogs, dbLoadedFromServer]);
 
   useEffect(() => {
     safeSetLocalStorage('iso_documents', documents);
-    if (dbLoadedFromServer) {
+    if (dbLoadedFromServer && !isInitialLoadRef.current) {
       scheduleDatabaseSync({ documents });
     }
   }, [documents, dbLoadedFromServer]);
 
   useEffect(() => {
     safeSetLocalStorage('iso_events', events);
-    if (dbLoadedFromServer) {
+    if (dbLoadedFromServer && !isInitialLoadRef.current) {
       scheduleDatabaseSync({ events });
     }
   }, [events, dbLoadedFromServer]);
 
   useEffect(() => {
     safeSetLocalStorage('iso_donations', donations);
-    if (dbLoadedFromServer) {
+    if (dbLoadedFromServer && !isInitialLoadRef.current) {
       scheduleDatabaseSync({ donations });
     }
   }, [donations, dbLoadedFromServer]);
@@ -1354,6 +1368,34 @@ export function App() {
         onOpenCompulsoryForm={() => setShowCompulsoryFormModal(true)}
       />
 
+      {/* Firestore Quota Notice Banner */}
+      {serverSyncStatus.quotaExceeded && !quotaBannerDismissed && (
+        <div className="fixed top-16 left-0 right-0 z-30 bg-slate-900/95 border-b border-blue-500/40 px-4 py-2 text-xs text-blue-200 flex items-center justify-between backdrop-blur-md shadow-md">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0 animate-pulse" />
+            <span>
+              <strong>Firestore Free Daily Quota Reached:</strong> Application has seamlessly switched to high-performance Server Storage. All data and edits are safely saved.
+            </span>
+          </div>
+          <div className="flex items-center gap-3 shrink-0 ml-4">
+            <a
+              href={FIRESTORE_UPGRADE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-300 hover:text-white underline font-semibold flex items-center gap-1"
+            >
+              Firebase Console <ExternalLink className="w-3 h-3 inline" />
+            </a>
+            <button
+              onClick={() => setQuotaBannerDismissed(true)}
+              className="text-slate-400 hover:text-white px-1.5 py-0.5 rounded cursor-pointer"
+              title="Dismiss notice"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Layout Body */}
       <div className="flex pt-16 min-h-[calc(100vh-4rem)]">

@@ -15,11 +15,11 @@ import {
   fetchOfficeBearersFromFirestore,
   fetchDesignationsFromFirestore,
   saveMasterDatabaseToFirestore,
-  saveOfficeBearerToFirestore,
-  deleteOfficeBearerFromFirestore,
-  saveDesignationToFirestore,
-  deleteDesignationFromFirestore
+  isFirestoreWriteQuotaExceeded,
+  FIRESTORE_UPGRADE_URL
 } from '../lib/firestoreDb';
+
+export { FIRESTORE_UPGRADE_URL, isFirestoreWriteQuotaExceeded };
 
 export interface IsoDatabaseSnapshot {
   members?: Member[];
@@ -40,18 +40,29 @@ let syncTimeout: any = null;
 let isSyncing = false;
 let pendingSnapshot: IsoDatabaseSnapshot | null = null;
 
+export interface DatabaseSyncStatus {
+  syncing: boolean;
+  lastSavedAt: string | null;
+  error: string | null;
+  quotaExceeded: boolean;
+  storageTarget: 'cloud_and_server' | 'server_disk';
+}
+
 // Subscribers for sync status notifications
-type SyncStatusCallback = (status: { syncing: boolean; lastSavedAt: string | null; error: string | null }) => void;
+type SyncStatusCallback = (status: DatabaseSyncStatus) => void;
 const listeners = new Set<SyncStatusCallback>();
 
 let lastSavedTimestamp: string | null = null;
 let lastSyncError: string | null = null;
 
 function notifyListeners() {
-  const status = {
+  const quotaExceeded = isFirestoreWriteQuotaExceeded();
+  const status: DatabaseSyncStatus = {
     syncing: isSyncing,
     lastSavedAt: lastSavedTimestamp,
-    error: lastSyncError
+    error: lastSyncError,
+    quotaExceeded,
+    storageTarget: quotaExceeded ? 'server_disk' : 'cloud_and_server'
   };
   listeners.forEach((fn) => {
     try {
@@ -64,10 +75,13 @@ function notifyListeners() {
 
 export function subscribeToDatabaseSync(callback: SyncStatusCallback): () => void {
   listeners.add(callback);
+  const quotaExceeded = isFirestoreWriteQuotaExceeded();
   callback({
     syncing: isSyncing,
     lastSavedAt: lastSavedTimestamp,
-    error: lastSyncError
+    error: lastSyncError,
+    quotaExceeded,
+    storageTarget: quotaExceeded ? 'server_disk' : 'cloud_and_server'
   });
   return () => {
     listeners.delete(callback);
@@ -160,25 +174,16 @@ export async function persistDatabaseToServer(snapshot: IsoDatabaseSnapshot): Pr
   let cloudSuccess = false;
   let serverSuccess = false;
 
-  // 1. Save to Firestore Cloud Database
+  // 1. Save to Firestore Cloud Database (if free write quota is available)
   try {
-    cloudSuccess = await saveMasterDatabaseToFirestore(snapshot);
-    // Also update individual Firestore documents if officeBearers or designations changed
-    if (Array.isArray(snapshot.officeBearers)) {
-      snapshot.officeBearers.forEach((b) => {
-        saveOfficeBearerToFirestore(b).catch((e) => console.warn('Firestore single OB save warning:', e));
-      });
-    }
-    if (Array.isArray(snapshot.designations)) {
-      snapshot.designations.forEach((d) => {
-        saveDesignationToFirestore(d).catch((e) => console.warn('Firestore single Desg save warning:', e));
-      });
+    if (!isFirestoreWriteQuotaExceeded()) {
+      cloudSuccess = await saveMasterDatabaseToFirestore(snapshot);
     }
   } catch (err: any) {
     console.warn('[DATABASE SERVICE] Firestore cloud persist notice:', err?.message);
   }
 
-  // 2. Save to Express server disk endpoint
+  // 2. Save to Express server disk endpoint (authoritative local disk persistence)
   try {
     const res = await fetch('/api/database/save', {
       method: 'POST',
